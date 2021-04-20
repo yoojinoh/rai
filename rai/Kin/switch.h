@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -33,7 +33,9 @@ struct KinematicSwitch {
   Enum<JointType> jointType;
   Enum<SwitchInitializationType> init;
   int timeOfApplication;
+  int timeOfTermination;
   int fromId, toId;
+  bool isStable=false;
   rai::Transformation jA, jB;
   KinematicSwitch();
   KinematicSwitch(SwitchType op, JointType type,
@@ -47,10 +49,10 @@ struct KinematicSwitch {
                   SwitchInitializationType _init=SWInit_zero,
                   int _timeOfApplication=0,
                   const rai::Transformation& jFrom=NoTransformation, const rai::Transformation& jTo=NoTransformation);
-  void setTimeOfApplication(double time, bool before, int stepsPerPhase, uint T);
-  Frame* apply(Configuration& K);
+  void setTimeOfApplication(const arr& times, bool before, int stepsPerPhase, uint T);
+  Frame* apply(FrameL& frames);
   rai::String shortTag(const Configuration* G) const;
-  void write(std::ostream& os, rai::Configuration* K=nullptr) const;
+  void write(std::ostream& os, const FrameL& frames={}) const;
 };
 
 } // namespace rai
@@ -59,3 +61,6 @@ stdOutPipe(rai::KinematicSwitch)
 
 int conv_time2step(double time, uint stepsPerPhase);
 double conv_step2time(int step, uint stepsPerPhase);
+intA conv_times2tuples(const arr& times, uint order, int stepsPerPhase, uint T,
+                       int deltaFromStep, int deltaToStep);
+

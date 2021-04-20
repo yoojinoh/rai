@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -78,7 +78,7 @@ void glDrawDiamond(float dx, float dy, float dz);
 void glDrawDiamond(float x, float y, float z, float dx, float dy, float dz);
 void glDrawSphere(float radius);
 void glDrawDisk(float radius);
-void glDrawProxy(const arr& p1, const arr& p2, double diskSize=.02, int colorCode=0, const arr& norm=NoArr, double rad1=0., double rad2=0.);
+void glDrawProxy(const arr& p1, const arr& p2, double diskSize=.02, int colorCode=0, const arr& norm=NoArr, double _rad1=0., double _rad2=0.);
 void glDrawCylinder(float radius, float length, bool closed=true);
 void glDrawCappedCylinder(float radius, float length);
 void glDrawAxis(double scale=-1.);
@@ -100,6 +100,7 @@ void glDrawTexQuad(const byteA& img,
 void glRasterImage(float x, float y, byteA& img, float zoom=1.);
 
 void read_png(byteA& img, const char* file_name, bool swap_rows);
+
 
 //===========================================================================
 //
@@ -159,7 +160,7 @@ struct OpenGL {
   uint rboDepth;
   Signaler isUpdating;
   Signaler watching;
-  bool drawMode_idColor=false;
+  OpenGLDrawOptions drawOptions;
 
   /// @name constructors & destructors
   OpenGL(const char* title="rai::OpenGL", int w=400, int h=400, bool _offscreen=false);
@@ -219,9 +220,10 @@ struct OpenGL {
  public: //driver dependent methods
   void openWindow();
   void closeWindow();
+  void raiseWindow();
   void setTitle(const char* _title=0);
-  void beginNonThreadedDraw();
-  void endNonThreadedDraw();
+  void beginNonThreadedDraw(bool fromWithinCallback=false);
+  void endNonThreadedDraw(bool fromWithinCallback=false);
   void postRedrawEvent(bool fromWithinCallback);
 
  public:

@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -21,7 +21,7 @@ struct Act {
   virtual ~Act() {}
 
   double time() { return rai::realTime()-startTime; }
-  virtual void write(ostream& os) { os <<'<' <<std::setw(14) <<NAME(typeid(*this)) <<"> @" <<std::setw(12) <<rai::Enum<ActStatus>(status()) <<std::setw(5) <<std::setprecision(3)<<time() <<"s -- "; }
+  virtual void write(ostream& os) { os <<'<' <<std::setw(14) <<niceTypeidName(typeid(*this)) <<"> @" <<std::setw(12) <<rai::Enum<ActStatus>(status()) <<std::setw(5) <<std::setprecision(3)<<time() <<"s -- "; }
 
   typedef std::shared_ptr<Act> Ptr;
 };

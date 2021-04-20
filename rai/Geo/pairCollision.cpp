@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -20,6 +20,7 @@ extern "C" {
 #endif
 
 #include "../Gui/opengl.h"
+#include "../Optim/newton.h"
 #include "qhull.h"
 
 #ifndef RAI_GJK
@@ -53,7 +54,7 @@ PairCollision::PairCollision(const rai::Mesh& _mesh1, const rai::Mesh& _mesh2, c
     libccd(M1, M2, _ccdMPRPenetration);
   }
 #else
-  if(distance<0.){
+  if(distance<0.) {
     libccd(M1, M2, _ccdMPRPenetration);
   }
 #endif
@@ -80,14 +81,86 @@ PairCollision::PairCollision(const rai::Mesh& _mesh1, const rai::Mesh& _mesh2, c
   //in current state, the rad1, rad2, have not been used at all!!
 }
 
+PairCollision::PairCollision(ScalarFunction func1, ScalarFunction func2, const arr& seed){
+
+  ScalarFunction f = [&func1, &func2](arr& g, arr& H, const arr& x){
+    arr g1, g2, H1, H2;
+#if 0
+    double d1 = func1(g1, H1, x);
+    d1 += 1.; //boundingRadius1;
+    CHECK_GE(d1, 0., "");
+    H = (2.*d1)*H1 + 2.*(g1^g1);
+    g = (2.*d1)*g1;
+    double d2 = func2(g2, H2, x);
+    d2 += 1.; //boundingRadius2;
+    CHECK_GE(d2, 0., "");
+    H += (2.*d2)*H2 + 2.*(g2^g2);
+    g += (2.*d2)*g2;
+    return d1*d1+d2*d2;
+#else
+    double d1 = func1(g1, H1, x);
+    double d2 = func2(g2, H2, x);
+    double dd = d1 - d2;
+    H = H1 + H2 + (2.*dd)*(H1-H2) + 2.*((g1-g2)^(g1-g2));
+    g = g1 + g2 + (2.*dd)*(g1-g2);
+    return d1+d2+dd*dd;
+#endif
+  };
+
+  arr x = seed;
+  CHECK_EQ(x.N, 3, "");
+  OptNewton newton(x, f, OptOptions()
+                   .set_verbose(0)
+                   .set_stopTolerance(1e-4)
+                   .set_maxStep(1.)
+                   .set_damping(1e-10) );
+  newton.run();
+
+  arr g1, g2;
+  double d1 = func1(g1, NoArr, x);
+  double d2 = func2(g2, NoArr, x);
+
+  cout <<"d1^2+d2^2:" <<newton.fx <<" d1:" <<d1 <<" d2:" <<d2 <<endl;
+
+//  CHECK_ZERO(d1-d2, 1e-4, "point should have equal distance (pos or negative) to both surfaces!");
+//  CHECK_ZERO(sumOfSqr(g1+g2), 1e-4, "gradients should exactly oppose!");
+
+  if(d1<d2){ //deeper into d1 -- use g1 as normal!
+    normal = g1;
+    normal /= length(normal);
+    p1 = x - d1*normal;
+    p2 = x + d1*normal;
+    distance = 2.*d1;
+  }else{
+    normal = -g2;
+    normal /= length(normal);
+    p1 = x - d2*normal;
+    p2 = x + d2*normal;
+    distance = 2.*d2;
+  }
+  rad1=rad2=0.;
+
+//  normal = p1-p2;
+//  distance = d1+d2;
+////  normal = g1-g2;
+//  normal = g1-g2;
+//  normal /= length(normal);
+
+  if(rai::sign(distance) * scalarProduct(normal, p1-p2) < 0.)
+    normal *= -1.;
+
+  simplex1 = p1;  simplex1.reshape(1,3);
+  simplex2 = p2;  simplex2.reshape(1,3);
+}
+
 void PairCollision::write(std::ostream& os) const {
-  os <<"PairCollide INFO" <<endl;
+  os <<"PairCollision INFO" <<endl;
   if(distance>0.) {
     os <<"  distance=" <<distance <<endl;
   } else {
     os <<"  penetration=" <<distance <<endl;
   }
-  os <<"  closest points: " <<p1 <<"  " <<p2 <<endl;
+  os <<"  witness points: " <<p1 <<"  " <<p2 <<endl;
   os <<"  simplex #: " <<simplex1.d0 <<"  " <<simplex2.d0 <<endl;
 //  if(eig1.N || eig2.N) os <<"  EIG #: " <<eig1.d0<<'-' <<eig2.d0 <<endl;
 }
@@ -105,37 +178,37 @@ void center_mesh(const void* obj, ccd_vec3_t* center) {
   memmove(center->v, &c.x, 3*sizeof(double));
 }
 
-bool _equal(double* a, double* b){
+bool _equal(double* a, double* b) {
   return a[0]==b[0] && a[1]==b[1] && a[2]==b[2];
 }
 
-bool _approxEqual(double* a, double* b){
+bool _approxEqual(double* a, double* b) {
   return fabs(a[0]-b[0])<1e-10 && fabs(a[1]-b[1])<1e-10 && fabs(a[2]-b[2])<1e-10;
 }
 
-bool _zero(double* a){
+bool _zero(double* a) {
   return !a[0] && !a[1] && !a[2];
 //  double eps=1e-10;
 //  return a[0]>-eps && a[0]<eps && a[1]>-eps && a[1]<eps && a[2]>-eps && a[2]<eps;
 }
 
-void _getSimplex(arr& S, ccd_vec3_t* simplex, const arr& mean){
+void _getSimplex(arr& S, ccd_vec3_t* simplex, const arr& mean) {
   int select[4] = {-1, -1, -1, -1};
   uint n=0;
   bool sel;
   //first count and select
   for(uint i=0; i<4; i++) {
-    double *s=simplex[i].v;
-    if(!_equal(s,s)) continue; //don't append nan!
+    double* s=simplex[i].v;
+    if(!_equal(s, s)) continue; //don't append nan!
     if(_equal(s, mean.p)) continue;
     sel=true;
     for(uint j=0; j<i; j++) if(_approxEqual(s, simplex[j].v)) { sel=false; break; }
     if(sel) select[n++] = i;
   }
   //then copy the selected
-  S.resize(n,3);
-  for(uint i=0;i<n;i++){
-    memmove(&S(i,0), simplex[select[i]].v, 3*S.sizeT);
+  S.resize(n, 3);
+  for(uint i=0; i<n; i++) {
+    memmove(&S(i, 0), simplex[select[i]].v, 3*S.sizeT);
   }
 
   /* SAFETY CHECK (slow!):
@@ -170,14 +243,14 @@ void PairCollision::libccd(rai::Mesh& m1, rai::Mesh& m2, CCDmethod method) {
 
   bool penetration=false;
 
-  if(method==_ccdMPRPenetration){
+  if(method==_ccdMPRPenetration) {
     int ret = ccdMPRPenetration(&m1, &m2, &ccd, &_depth, &_dir, &_pos, simplex);
-    if(ret<0){
+    if(ret<0) {
       LOG(0) <<"WARNING: called MPR penetration for non intersecting meshes...";
       m1._support_vertex = rnd(m1.V.d0);
       m2._support_vertex = rnd(m2.V.d0);
       libccd(m1, m2, _ccdGJKIntersect);
-      if(distance<0.){
+      if(distance<0.) {
         LOG(0) <<"WARNING: but GJK says intersection";
         distance=0;
       }
@@ -200,12 +273,12 @@ void PairCollision::libccd(rai::Mesh& m1, rai::Mesh& m2, CCDmethod method) {
     else _getSimplex(simplex1, simplex, m1.getMean());
     if(m2.V.d0==1) simplex2 = m2.V; //m2 is a point/sphere
     else _getSimplex(simplex2, simplex+4, m2.getMean());
-    if(simplex1.d0>3) simplex1.resizeCopy(3,3);
-    if(simplex2.d0>3) simplex2.resizeCopy(3,3);
+    if(simplex1.d0>3) simplex1.resizeCopy(3, 3);
+    if(simplex2.d0>3) simplex2.resizeCopy(3, 3);
 
-  }else if(method==_ccdGJKIntersect){
+  } else if(method==_ccdGJKIntersect) {
     int ret = ccdGJKIntersect(&m1, &m2, &ccd, &_v1, &_v2, simplex);
-    if(ret){
+    if(ret) {
       distance = -1.;
       return;
     }
@@ -222,9 +295,9 @@ void PairCollision::libccd(rai::Mesh& m1, rai::Mesh& m2, CCDmethod method) {
     arr mean = zeros(3);
     _getSimplex(simplex1, simplex, mean);
     _getSimplex(simplex2, simplex+4, mean);
-    if(simplex1.d0>3) simplex1.resizeCopy(3,3);
-    if(simplex2.d0>3) simplex2.resizeCopy(3,3);
-  }else{
+    if(simplex1.d0>3) simplex1.resizeCopy(3, 3);
+    if(simplex2.d0>3) simplex2.resizeCopy(3, 3);
+  } else {
     NIY;
   }
 
@@ -237,38 +310,29 @@ void PairCollision::libccd(rai::Mesh& m1, rai::Mesh& m2, CCDmethod method) {
     distance = length(normal);
     if(distance>1e-10) normal/=distance;
     d = distance;
-  }
-  else if(simplexType(1, 2)) {
+  } else if(simplexType(1, 2)) {
     double s;
     p1 = simplex1[0];
     d=coll_1on2(p2, normal, s, simplex1, simplex2);
-  }
-  else if(simplexType(2, 1)) {
+  } else if(simplexType(2, 1)) {
     double s;
     p2 = simplex2[0];
     d=coll_1on2(p1, normal, s, simplex2, simplex1);
-  }
-  else if(simplexType(1, 3)) {
+  } else if(simplexType(1, 3)) {
     p1 = simplex1[0];
     d=coll_1on3(p2, normal, simplex1, simplex2);
-  }
-  else if(simplexType(3, 1)) {
+  } else if(simplexType(3, 1)) {
     p2 = simplex2[0];
     d=coll_1on3(p1, normal, simplex2, simplex1);
-  }
-  else if(simplexType(2, 2)) {
+  } else if(simplexType(2, 2)) {
     d=coll_2on2(p1, p2, normal, simplex1, simplex2);
-  }
-  else if(simplexType(2, 3)) {
-    d=coll_2on3(p1, p2, normal, simplex1, simplex2, arr(_pos.v, 3));
-  }
-  else if(simplexType(3, 2)) {
-    d=coll_2on3(p2, p1, normal, simplex2, simplex1, arr(_pos.v, 3));
-  }
-  else if(simplexType(3, 3)) {
+  } else if(simplexType(2, 3)) {
+    d=coll_2on3(p1, p2, normal, simplex1, simplex2, arr(_pos.v, 3, true));
+  } else if(simplexType(3, 2)) {
+    d=coll_2on3(p2, p1, normal, simplex2, simplex1, arr(_pos.v, 3, true));
+  } else if(simplexType(3, 3)) {
     d=coll_3on3(p2, p1, normal, simplex2, simplex1, mean(simplex1)); //arr(_pos.v, 3));
-  }
-  else HALT("simplex types " <<simplex1.d0 <<' ' <<simplex2.d0 <<" not handled");
+  } else HALT("simplex types " <<simplex1.d0 <<' ' <<simplex2.d0 <<" not handled");
   CHECK_EQ(p1.N, 3, "PairCollision failed")
   CHECK_EQ(p2.N, 3, "PairCollision failed")
 
@@ -331,16 +395,16 @@ void PairCollision::GJK_sqrDistance() {
   simplex1.resize(0, 3);
   simplex2.resize(0, 3);
   if(simplex.npts>=1) {
-    simplex1.append(arr(simplex.coords1[0], 3));
-    simplex2.append(arr(simplex.coords2[0], 3));
+    simplex1.append(arr(simplex.coords1[0], 3, true));
+    simplex2.append(arr(simplex.coords2[0], 3, true));
   }
   if(simplex.npts>=2) {
-    if(simplex.simplex1[1]!=simplex.simplex1[0]) simplex1.append(arr(simplex.coords1[1], 3));
-    if(simplex.simplex2[1]!=simplex.simplex2[0]) simplex2.append(arr(simplex.coords2[1], 3));
+    if(simplex.simplex1[1]!=simplex.simplex1[0]) simplex1.append(arr(simplex.coords1[1], 3, true));
+    if(simplex.simplex2[1]!=simplex.simplex2[0]) simplex2.append(arr(simplex.coords2[1], 3, true));
   }
   if(simplex.npts>=3) {
-    if(simplex.simplex1[2]!=simplex.simplex1[0] && simplex.simplex1[2]!=simplex.simplex1[1]) simplex1.append(arr(simplex.coords1[2], 3));
-    if(simplex.simplex2[2]!=simplex.simplex2[0] && simplex.simplex2[2]!=simplex.simplex2[1]) simplex2.append(arr(simplex.coords2[2], 3));
+    if(simplex.simplex1[2]!=simplex.simplex1[0] && simplex.simplex1[2]!=simplex.simplex1[1]) simplex1.append(arr(simplex.coords1[2], 3, true));
+    if(simplex.simplex2[2]!=simplex.simplex2[0] && simplex.simplex2[2]!=simplex.simplex2[1]) simplex2.append(arr(simplex.coords2[2], 3, true));
   }
 #else
   NICO
@@ -355,7 +419,7 @@ void PairCollision::glDraw(OpenGL&) {
 
   glColor(0., 1., 0., 1.);
   glDrawDiamond(P1(0), P1(1), P1(2), .005, .005, .005);
-  if(simplex1.N){
+  if(simplex1.N) {
     for(uint i=0; i<simplex1.d0; i++) simplex1[i] -= rad1*normal;
     glDrawPolygon(simplex1);
     for(uint i=0; i<simplex1.d0; i++) simplex1[i] += rad1*normal;
@@ -363,7 +427,7 @@ void PairCollision::glDraw(OpenGL&) {
 
   glColor(0., 0., 1., 1.);
   glDrawDiamond(P2(0), P2(1), P2(2), .005, .005, .005);
-  if(simplex2.N){
+  if(simplex2.N) {
     for(uint i=0; i<simplex2.d0; i++) simplex2[i] += rad2*normal;
     glDrawPolygon(simplex2);
     for(uint i=0; i<simplex2.d0; i++) simplex2[i] -= rad2*normal;
@@ -406,14 +470,11 @@ void PairCollision::kinNormal(arr& y, arr& J,
                               const arr& Jx1, const arr& Jx2) {
   y = normal;
   if(!!J) {
-    J.resize(3, Jp1.d1).setZero();
     if(simplexType(1, 3)) {
       J = crossProduct(Jx2, y);
-    }
-    if(simplexType(3, 1)) {
+    } else if(simplexType(3, 1)) {
       J = crossProduct(Jx1, y);
-    }
-    if(simplexType(2, 2)) {
+    } else if(simplexType(2, 2)) {
       arr a = simplex1[1]-simplex1[0];  a/=length(a);
       arr b = simplex2[1]-simplex2[0];  b/=length(b);
       double ab=scalarProduct(a, b);
@@ -422,28 +483,36 @@ void PairCollision::kinNormal(arr& y, arr& J,
         double sign = ::sign(scalarProduct(normal, crossProduct(b, a)));
         J = ((sign/nn) * (eye(3, 3) - normal*~normal)) * (skew(b) * crossProduct(Jx1, a) - skew(a) * crossProduct(Jx2, b));
       }
-    }
-    if(simplexType(2, 1)) {
+    } else if(simplexType(2, 1)) {
       y = p1 - p2;
       J = Jp1 - Jp2;
       normalizeWithJac(y, J);
       arr a = simplex1[1]-simplex1[0];  a/=length(a);
-      J -= a*(~a*J);
-      J += a*(~a*crossProduct(Jx1, y));
-    }
-    if(simplexType(1, 2)) {
+      arr aa = a^a;
+      J -= aa*J;
+      J += aa*crossProduct(Jx1, y);
+    } else if(simplexType(1, 2)) {
       y = p1 - p2;
       J = Jp1 - Jp2;
       normalizeWithJac(y, J);
       arr b = simplex2[1]-simplex2[0];  b/=length(b);
-      J -= b*(~b*J);
-      J += b*(~b*crossProduct(Jx2, y));
-    }
-    if(simplexType(1, 1)) {
+      arr bb = b^b;
+      J -= bb*J;
+      J += bb*crossProduct(Jx2, y);
+    } else if(simplexType(1, 1)) {
       y = p1 - p2;
       J = Jp1 - Jp2;
       normalizeWithJac(y, J);
-    }
+    } else if(simplexType(2, 3)) {
+      J = Jp1;
+      J.setZero();
+    } else if(simplexType(3, 2)) {
+      J = Jp1;
+      J.setZero();
+    } else if(simplexType(3, 3)) {
+      J = Jp1;
+      J.setZero();
+    } else NIY;
     checkNan(J);
   }
 }
@@ -455,15 +524,15 @@ void PairCollision::kinVector(arr& y, arr& J,
   if(!!J) {
     J = Jp1 - Jp2;
     if(simplexType(1, 3)) {
-      J = normal*(~normal*J);
+      J = (normal^normal)*J;
       J += crossProduct(Jx2, p1-p2);
     }
     if(simplexType(3, 1)) {
-      J = normal*(~normal*J);
+      J = (normal^normal)*J;
       J += crossProduct(Jx1, p1-p2);
     }
     if(simplexType(2, 2)) {
-      J = normal*(~normal*J);
+      J = (normal^normal)*J;
       arr a = simplex1[1]-simplex1[0];  a/=length(a);
       arr b = simplex2[1]-simplex2[0];  b/=length(b);
       double ab=scalarProduct(a, b);
@@ -475,13 +544,15 @@ void PairCollision::kinVector(arr& y, arr& J,
     }
     if(simplexType(2, 1)) {
       arr a = simplex1[1]-simplex1[0];  a/=length(a);
-      J -= a*(~a*J);
-      J += a*(~a*crossProduct(Jx1, p1-p2));
+      arr aa = a^a;
+      J -= aa*J;
+      J += aa*crossProduct(Jx1, p1-p2);
     }
     if(simplexType(1, 2)) {
       arr b = simplex2[1]-simplex2[0];  b/=length(b);
-      J -= b*(~b*J);
-      J += b*(~b*crossProduct(Jx2, p1-p2));
+      arr bb = b^b;
+      J -= bb*J;
+      J += bb*crossProduct(Jx2, p1-p2);
     }
     checkNan(J);
   }
@@ -493,7 +564,7 @@ void PairCollision::kinVector(arr& y, arr& J,
     double fac = (distance-rad)/(distance+eps);
     if(!!J) {
       arr d_fac = ((1.-fac)/(distance+eps)) *((~normal)*J);
-      J = J*fac + y*d_fac;
+      J = J*fac + y.reshape(3,1)*d_fac;
       checkNan(J);
     }
     y *= fac;
@@ -506,7 +577,7 @@ void PairCollision::kinPointP1(arr& y, arr& J, const arr& Jp1, const arr& Jp2, c
     J = Jp1;
     if(simplexType(3, 1)) {
       J = Jp2;
-      J += normal*(~normal*(Jp1-Jp2));
+      J += (normal^normal)*(Jp1-Jp2);
       J += crossProduct(Jx1, p1-p2);
     }
     if(simplexType(2, 2)) {
@@ -517,8 +588,8 @@ void PairCollision::kinPointP1(arr& y, arr& J, const arr& Jp1, const arr& Jp2, c
       J = Jp1;
       arr c = b*ab-a;
       double ac = scalarProduct(a, c);
-      if(fabs(ac)>1e-10){ //otherwise the Jacobian is singular...
-        J += (1./ac) * a*(~c*(Jp2-Jp1));
+      if(fabs(ac)>1e-10) { //otherwise the Jacobian is singular...
+        J += ((1./ac) * (a^c))*(Jp2-Jp1);
 
         arr x = p1-p2;
         arr Jc = (b*~b-eye(3, 3))* crossProduct(Jx1, a) + (ab*eye(3, 3) + b*~a - 2.*a*~b)*crossProduct(Jx2, b);
@@ -528,8 +599,9 @@ void PairCollision::kinPointP1(arr& y, arr& J, const arr& Jp1, const arr& Jp2, c
     }
     if(simplexType(2, 1)) {
       arr a = simplex1[1]-simplex1[0];  a/=length(a);
-      J += a*(~a*(Jp2-Jp1));
-      J += a*(~a*crossProduct(Jx1, p1-p2));
+      arr aa = a^a;
+      J += aa*(Jp2-Jp1);
+      J += aa*crossProduct(Jx1, p1-p2);
     }
     checkNan(J);
   }
@@ -550,7 +622,7 @@ void PairCollision::kinPointP2(arr& y, arr& J, const arr& Jp1, const arr& Jp2, c
     J = Jp2;
     if(simplexType(1, 3)) {
       J = Jp1;
-      J += normal*(~normal*(Jp2-Jp1));
+      J += (normal^normal)*(Jp2-Jp1);
       J += crossProduct(Jx2, p2-p1);
     }
     if(simplexType(2, 2)) {
@@ -561,8 +633,8 @@ void PairCollision::kinPointP2(arr& y, arr& J, const arr& Jp1, const arr& Jp2, c
       J = Jp2;
       arr c = b*ab-a;
       double ac = scalarProduct(a, c);
-      if(fabs(ac)>1e-10){ //otherwise the Jacobian is singular...
-        J += (1./ac) * a*(~c*(Jp1-Jp2));
+      if(fabs(ac)>1e-10) { //otherwise the Jacobian is singular...
+        J += ((1./ac) * (a^c))*(Jp1-Jp2);
 
         arr x = p2-p1;
         arr Jc = (b*~b-eye(3, 3))* crossProduct(Jx2, a) + (ab*eye(3, 3) + b*~a - 2.*a*~b)*crossProduct(Jx1, b);
@@ -572,8 +644,9 @@ void PairCollision::kinPointP2(arr& y, arr& J, const arr& Jp1, const arr& Jp2, c
     }
     if(simplexType(1, 2)) {
       arr b = simplex2[1]-simplex2[0];  b/=length(b);
-      J += b*(~b*(Jp1-Jp2));
-      J += b*(~b*crossProduct(Jx2, p2-p1));
+      arr bb = b^b;
+      J += bb*(Jp1-Jp2);
+      J += bb*crossProduct(Jx2, p2-p1);
     }
     checkNan(J);
   }
@@ -590,7 +663,7 @@ void PairCollision::kinPointP2(arr& y, arr& J, const arr& Jp1, const arr& Jp2, c
 
 void PairCollision::kinCenter(arr& y, arr& J, const arr& Jp1, const arr& Jp2, const arr& Jx1, const arr& Jx2) {
   arr _p1, _p2, JP1, JP2;
-  if(!J){ JP1.setNoArr(); JP2.setNoArr(); }
+  if(!J) { JP1.setNoArr(); JP2.setNoArr(); }
   kinPointP1(_p1, JP1, Jp1, Jp2, Jx1, Jx2);
   kinPointP2(_p2, JP2, Jp1, Jp2, Jx1, Jx2);
   y = .5 * (_p1 + _p2);
@@ -673,8 +746,8 @@ double coll_1on2(arr& p2, arr& normal, double& s, const arr& pts1, const arr& pt
   double d = _normal.length();
   if(d>1e-10) _normal /= d;
 
-  p2.setCarray(_p2.p(),3);
-  normal.setCarray(_normal.p(),3);
+  p2.setCarray(_p2.p(), 3);
+  normal.setCarray(_normal.p(), 3);
   return d;
 }
 
@@ -733,9 +806,9 @@ double coll_2on2(arr& p1, arr& p2, arr& normal, const arr& pts1, const arr& pts2
   _p1 = p10 + t*a;
   _p2 = _p1 + d*_normal;
 
-  p1.setCarray(_p1.p(),3);
-  p2.setCarray(_p2.p(),3);
-  normal.setCarray(_normal.p(),3);
+  p1.setCarray(_p1.p(), 3);
+  p2.setCarray(_p2.p(), 3);
+  normal.setCarray(_normal.p(), 3);
   return d;
 }
 

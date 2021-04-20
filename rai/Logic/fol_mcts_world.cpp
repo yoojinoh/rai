@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -235,7 +235,7 @@ const std::vector<FOL_World::Handle> FOL_World::get_actions() {
     decisions.append(Handle(new Decision(true, nullptr, {}, decisions.N))); //the wait decision (true as first argument, no rule, no substitution)
   }
   for(Node* rule:decisionRules) {
-    NodeL subs = getRuleSubstitutions2(*state, rule, verbose-3);
+    NodeL subs = getRuleSubstitutions2(*state, rule->graph(), verbose-3);
     for(uint s=0; s<subs.d0; s++) {
       decisions.append(Handle(new Decision(false, rule, subs[s], decisions.N))); //a grounded rule decision (abstract rule with substution)
     }
@@ -243,7 +243,7 @@ const std::vector<FOL_World::Handle> FOL_World::get_actions() {
   if(verbose>2) cout <<"-- # possible decisions: " <<decisions.N <<endl;
   if(verbose>3) for(Handle& d:decisions) { d.get()->write(cout); cout <<endl; }
 //    cout <<"rule " <<d.first->keys(1) <<" SUB "; listWrite(d.second, cout); cout <<endl;
-  return conv_arr2stdvec(decisions);
+  return decisions.vec();
 }
 
 bool FOL_World::is_feasible_action(const MCTS_Environment::Handle& action) {

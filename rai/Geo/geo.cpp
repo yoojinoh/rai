@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -13,6 +13,8 @@
 #ifdef RAI_GL
 #  include <GL/glu.h>
 #endif
+
+#pragma GCC diagnostic ignored "-Wclass-memaccess"
 
 const rai::Vector Vector_x(1, 0, 0);
 const rai::Vector Vector_y(0, 1, 0);
@@ -479,7 +481,9 @@ void Quaternion::flipSign() { w=-w; x=-x; y=-y; z=-z; }
 
 /// multiplies the rotation by a factor f (i.e., makes f-times the rotation)
 void Quaternion::multiply(double f) {
-  if(w==1. || f==1.) return;
+  normalize();
+  if(w<0.) flipSign();
+  if(1.-w<1e-10 || f==1.) return;
   double phi=acos(w);
   phi*=f;
   w=cos(phi);
@@ -924,7 +928,7 @@ arr Quaternion::getEulerRPY() const {
   // pitch (y-axis rotation)
   double sinp = +2.0 * (w * y - z * x);
   if(fabs(sinp) >= 1)
-    pitch = copysign(M_PI / 2, sinp); // use 90 degrees if out of range
+    pitch = copysign(RAI_PI / 2, sinp); // use 90 degrees if out of range
   else
     pitch = asin(sinp);
 
@@ -936,7 +940,7 @@ arr Quaternion::getEulerRPY() const {
   return {roll, pitch, yaw};
 }
 
-void Quaternion::applyOnPointArray(arr& pts){
+void Quaternion::applyOnPointArray(arr& pts) {
   arr R = ~getArr(); //transposed, to make it applicable to an n-times-3 array
   pts = pts * R;
 }
@@ -981,6 +985,19 @@ arr Quaternion::getMatrixJacobian() const {
   J *= 2.;
   J.reshape(4, 3, 3);
   return J;
+}
+
+arr Quaternion::getQuaternionMultiplicationMatrix() const{
+//  a.w = b.w*c.w - b.x*c.x - b.y*c.y - b.z*c.z;
+//  a.x = b.w*c.x + b.x*c.w + b.y*c.z - b.z*c.y;
+//  a.y = b.w*c.y - b.x*c.z + b.y*c.w + b.z*c.x;
+//  a.z = b.w*c.z + b.x*c.y - b.y*c.x + b.z*c.w;
+  return arr(
+  {4,4},
+  {+w, -x, -y, -z,
+   +x, +w, +z, -y,
+   +y, -z, +w, +x,
+   +z, +y, -x, +w});
 }
 
 void Quaternion::writeNice(std::ostream& os) const { os <<"Quaternion: " <<getDeg() <<" around " <<getVec() <<"\n"; }
@@ -1039,6 +1056,11 @@ Quaternion operator-(const Quaternion& b, const Quaternion& c) {
   a.y = b.y-c.y;
   a.z = b.z-c.z;
   a.isZero = false;
+  return a;
+}
+
+Quaternion operator*=(Quaternion& a, double s){
+  a.multiply(s);
   return a;
 }
 
@@ -1237,7 +1259,12 @@ Transformation& Transformation::setZero() {
 
 void Transformation::set(const double* p) { pos.set(p); rot.set(p+3); }
 
-void Transformation::set(const arr& t) { CHECK_EQ(t.N, 7, "");  set(t.p); }
+void Transformation::set(const arr& t) {
+  if(t.N==7) set(t.p);
+  else if(t.N==3){ pos.set(t.p); rot.setZero(); }
+  else if(t.N==4){ pos.setZero(); rot.set(t.p); }
+  else HALT("transformation can be assigned only to a 7D, 3D, or 4D array");
+}
 
 /// randomize the frame
 Transformation& Transformation::setRandom() {
@@ -1334,7 +1361,7 @@ double* Transformation::getAffineMatrix(double* m) const {
   m[0] = M.m00; m[1] = M.m01; m[2] = M.m02; m[3] =pos.x;
   m[4] = M.m10; m[5] = M.m11; m[6] = M.m12; m[7] =pos.y;
   m[8] = M.m20; m[9] = M.m21; m[10]= M.m22; m[11]=pos.z;
-  m[12]=0.;    m[13]=0.;    m[14]=0.;    m[15]=1.;
+  m[12]= 0.;    m[13]= 0.;    m[14]= 0.;    m[15]=1.;
   return m;
 }
 
@@ -1351,7 +1378,7 @@ double* Transformation::getInverseAffineMatrix(double* m) const {
   m[0] =M.m00; m[1] =M.m10; m[2] =M.m20; m[3] =-pinv.x;
   m[4] =M.m01; m[5] =M.m11; m[6] =M.m21; m[7] =-pinv.y;
   m[8] =M.m02; m[9] =M.m12; m[10]=M.m22; m[11]=-pinv.z;
-  m[12]=0.;   m[13]=0.;   m[14]=0.;   m[15]=1.;
+  m[12]=0.;    m[13]=0.;    m[14]=0.;    m[15]=1.;
   return m;
 }
 
@@ -1489,12 +1516,13 @@ void Transformation::read(std::istream& is) {
         case '|':
         case '>': is.putback(c); return; //those symbols finish the reading without error
         default: {
-          RAI_MSG("unknown Transformation read tag: " <<c <<"abort reading this frame"); is.putback(c); return;
+          RAI_MSG("unknown Transformation read tag: '" <<c <<"' abort reading this frame"); is.putback(c); return;
         }
       }
     if(is.fail()) HALT("error reading '" <<c <<"' parameters in frame");
   }
   if(is.fail()) HALT("could not read Transformation struct");
+  rot.normalize();
 }
 
 //==============================================================================

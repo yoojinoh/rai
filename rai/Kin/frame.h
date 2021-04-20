@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -12,7 +12,6 @@
 #include "../Geo/geo.h"
 #include "../Core/graph.h"
 #include "../Geo/mesh.h"
-#include "../Geo/geoms.h"
 
 /* TODO:
  * replace the types by more fundamental:
@@ -21,18 +20,20 @@
  */
 
 namespace rai {
-  struct Configuration;
-  struct Frame;
-  struct Joint;
-  struct Shape;
-  struct Inertia;
-  struct ForceExchange;
-  enum JointType { JT_none=-1, JT_hingeX=0, JT_hingeY=1, JT_hingeZ=2, JT_transX=3, JT_transY=4, JT_transZ=5, JT_transXY=6, JT_trans3=7, JT_transXYPhi=8, JT_universal=9, JT_rigid=10, JT_quatBall=11, JT_phiTransXY=12, JT_XBall, JT_free, JT_tau };
-  enum BodyType  { BT_none=-1, BT_dynamic=0, BT_kinematic, BT_static };
+struct Configuration;
+struct Frame;
+struct Dof;
+struct Joint;
+struct Shape;
+struct Inertia;
+struct ForceExchange;
+enum JointType { JT_none=-1, JT_hingeX=0, JT_hingeY=1, JT_hingeZ=2, JT_transX=3, JT_transY=4, JT_transZ=5, JT_transXY=6, JT_trans3=7, JT_transXYPhi=8, JT_universal=9, JT_rigid=10, JT_quatBall=11, JT_phiTransXY=12, JT_XBall, JT_free, JT_tau };
+enum BodyType  { BT_none=-1, BT_dynamic=0, BT_kinematic, BT_static };
 }
 
 typedef rai::Array<rai::Frame*> FrameL;
 typedef rai::Array<rai::Joint*> JointL;
+typedef rai::Array<rai::Dof*> DofL;
 typedef rai::Array<rai::Shape*> ShapeL;
 
 extern rai::Frame& NoFrame;
@@ -74,7 +75,7 @@ struct Frame : NonCopyable {
   Frame* parent=nullptr;   ///< parent frame
   FrameL children;         ///< list of children
 
-protected:
+ protected:
   Transformation Q=0;        ///< relative transform to parent
   Transformation X=0;        ///< frame's absolute pose
   //data structure state (lazy evaluation leave the state structure out of sync)
@@ -86,9 +87,9 @@ protected:
   void calc_X_from_parent();
   void calc_Q_from_parent(bool enforceWithinJoint = true);
 
-public:
-  double tau=0.;             ///< frame's absolute time (could be thought as part of the transformation X in space-time)
-  Graph ats;                 ///< list of any-type attributes
+ public:
+  double tau=0.;             ///< frame's relative time transformation (could be thought as part of the transformation X in space-time)
+  std::shared_ptr<Graph> ats;                 ///< list of any-type attributes
 
   //attachments to the frame
   Joint* joint=nullptr;          ///< this frame is an articulated joint
@@ -115,15 +116,17 @@ public:
   Frame* insertPreLink(const rai::Transformation& A=0);
   Frame* insertPostLink(const rai::Transformation& B=0);
   void unLink();
-  void linkFrom(Frame* _parent, bool adoptRelTransform=false);
+  void setParent(Frame* _parent, bool adoptRelTransform=false);
 
   //structural information/retrieval
   bool isChildOf(const Frame* par, int order=1) const;
   void getRigidSubFrames(FrameL& F); ///< recursively collect all rigidly attached sub-frames (e.g., shapes of a link), (THIS is not included)
   void getPartSubFrames(FrameL& F); ///< recursively collect all frames of this part
   void getSubtree(FrameL& F);
+  Frame* getRoot();
   FrameL getPathToRoot();
   Frame* getUpwardLink(rai::Transformation& Qtotal=NoTransformation, bool untilPartBreak=false) const; ///< recurse upward BEFORE the next joint and return relative transform (this->Q is not included!b)
+  Frame* getDownwardLink(bool untilPartBreak=false) const; ///< recurse upward BEFORE the next joint and return relative transform (this->Q is not included!b)
   FrameL getPathToUpwardLink(bool untilPartBreak=false); ///< recurse upward BEFORE the next joint and return relative transform (this->Q is not included!b)
   const char* isPart();
 
@@ -135,21 +138,21 @@ public:
   void write(std::ostream& os) const;
 
   //-- HIGHER LEVEL USER INTERFACE
-  void setShape(rai::ShapeType shape, const std::vector<double>& size);
-  void setPose(const rai::Transformation& _X);
-  void setPosition(const std::vector<double>& pos);
-  void setQuaternion(const std::vector<double>& quat);
-  void setRelativePosition(const std::vector<double>& pos);
-  void setRelativeQuaternion(const std::vector<double>& quat);
-  void setPointCloud(const std::vector<double>& points, const std::vector<byte>& colors= {});
-  void setConvexMesh(const std::vector<double>& points, const std::vector<byte>& colors= {}, double radius=0.);
-  void setMesh(const std::vector<double>& points, const std::vector<byte>& colors= {}, double radius=0.);
-  void setColor(const std::vector<double>& color);
-  void setJoint(rai::JointType jointType);
-  void setContact(int cont);
-  void setMass(double mass);
-  void addAttribute(const char* key, double value);
-  void setJointState(const std::vector<double>& q); ///< throws error if this frame is not also a joint, and if q.size() != joint->dim
+  Frame& setShape(rai::ShapeType shape, const arr& size);
+  Frame& setPose(const rai::Transformation& _X);
+  Frame& setPosition(const arr& pos);
+  Frame& setQuaternion(const arr& quat);
+  Frame& setRelativePosition(const arr& pos);
+  Frame& setRelativeQuaternion(const arr& quat);
+  Frame& setPointCloud(const arr& points, const byteA& colors= {});
+  Frame& setConvexMesh(const arr& points, const byteA& colors= {}, double radius=0.);
+  Frame& setMesh(const arr& points, const byteA& colors= {}, double radius=0.);
+  Frame& setColor(const arr& color);
+  Frame& setJoint(rai::JointType jointType);
+  Frame& setContact(int cont);
+  Frame& setMass(double mass);
+  Frame& addAttribute(const char* key, double value);
+  Frame& setJointState(const arr& q); ///< throws error if this frame is not also a joint, and if q.size() != joint->dim
 
   arr getPose() { return ensure_X().getArr7d(); }
   arr getPosition() { return ensure_X().pos.getArr(); }
@@ -159,6 +162,7 @@ public:
   arr getRelativeQuaternion() const { return get_Q().rot.getArr(); }
   arr getSize() ;
   arr getMeshPoints();
+  uintA getMeshTriangles();
   arr getMeshCorePoints();
   arr getJointState() const; ///< throws error if this frame is not also a joint
 
@@ -173,24 +177,31 @@ stdOutPipe(Frame)
 
 //===========================================================================
 
+struct Dof {
+  bool active=true;  ///< if false, this dof is not considered part of the configuration's q-vector
+  uint dim=UINT_MAX;
+  uint qIndex=UINT_MAX;
+  arr  limits;        ///< joint limits (lo, up, [maxvel, maxeffort])
+  virtual ~Dof() {}
+  virtual void setDofs(const arr& q, uint n=0) = 0;
+  virtual String name() const = 0;
+};
+
 /// for a Frame with Joint-Link, the relative transformation 'Q' is articulated
-struct Joint : NonCopyable {
+struct Joint : Dof, NonCopyable {
   Frame* frame;      ///< this is the frame that Joint articulates! I.e., the output frame
 
   // joint information
-  uint dim=UINT_MAX;
-  uint qIndex;
   byte generator;    ///< (7bits), h in Featherstone's code (indicates basis vectors of the Lie algebra, but including the middle quaternion w)
-  arr limits;        ///< joint limits (lo, up, [maxvel, maxeffort])
   arr q0;            ///< joint null position
   double H=1.;       ///< control cost scalar
   double scale=1.;   ///< scaling robot-q = scale * q-vector
 
   Joint* mimic=nullptr; ///< if non-nullptr, this joint's state is identical to another's
+  JointL mimicers;      ///< list of mimicing joints
 
   Vector axis=0;          ///< joint axis (same as X.rot.getX() for standard hinge joints)
   Enum<JointType> type;   ///< joint type
-  bool active=true;  ///< if false, this joint is not considered part of the q-vector
 
   //attachments to the joint
   struct Uncertainty* uncertainty=nullptr;
@@ -203,15 +214,20 @@ struct Joint : NonCopyable {
   const Transformation& X() const; ///< the frame where the joint STARTS (i.e. parent->X)
   const Transformation& Q() const; ///< the transformation realized by this joint (i.e. from parent->X to frame->X)
   Frame* from() const { return frame->parent; }
+  virtual String name() const { return STRING(frame->name<<'.'<<frame->ID); }
 
+  void setMimic(Joint* j, bool unsetPreviousMimic=false);
   uint qDim();
-  void calc_Q_from_q(const arr& q, uint n);
+  void setDofs(const arr& q, uint n=0);
   arr calc_q_from_Q(const Transformation& Q) const;
   arr getScrewMatrix();
   uint getDimFromType() const;
   arr get_h() const;
 
-  bool isPartBreak() { return (dim!=1 && !mimic) || type==JT_tau; }
+  bool isPartBreak() {
+    return (type==JT_rigid || type==JT_free); // && !mimic;
+//    return (dim!=1 && !mimic) || type==JT_tau;
+  }
 
   //access the K's q vector
   double& getQ();
@@ -256,12 +272,12 @@ stdOutPipe(Inertia)
 /// a Frame with Shape is a collision or visual object
 struct Shape : NonCopyable, GLDrawer {
   Frame& frame;
-  ptr<Mesh> _mesh;
-  ptr<Mesh> _sscCore;
   Enum<ShapeType> _type;
   arr size;
+  ptr<Mesh> _mesh;
+  ptr<Mesh> _sscCore;
+  char cont=0;           ///< are contacts registered (or filtered in the callback)
 
-  void setMeshMimic(const Frame* f);
   double radius() { if(size.N) return size(-1); return 0.; }
   Enum<ShapeType>& type() { return _type; }
   Mesh& mesh() { if(!_mesh) _mesh = make_shared<Mesh>();  return *_mesh; }
@@ -269,9 +285,7 @@ struct Shape : NonCopyable, GLDrawer {
   double alpha() { arr& C=mesh().C; if(C.N==4) return C(3); return 1.; }
 
   void createMeshes();
-
-  char cont=0;           ///< are contacts registered (or filtered in the callback)
-  bool visual=true;
+  shared_ptr<ScalarFunction> functional(bool worldCoordinates=true);
 
   Shape(Frame& f, const Shape* copyShape=nullptr); //new Shape, being added to graph and frame's shape lists
   virtual ~Shape();

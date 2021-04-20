@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -16,53 +16,36 @@
 
 namespace rai {
 
-Spline::Spline(uint degree) : degree(degree) {}
-
-Spline::Spline(uint T, const arr& X, uint degree) : points(X) {
-  CHECK_EQ(points.nd, 2, "");
-  setUniformNonperiodicBasis(T, points.d0, degree);
-}
-
 void Spline::clear() {
   points.clear();
   times.clear();
-  basis.clear();
-  basis_trans.clear();
-  basis_timeGradient.clear();
-}
-
-void Spline::plotBasis(PlotModule& plt) {
-  plt.Clear();
-  arr b_sum(basis.d0);
-  tensorMarginal(b_sum, basis_trans, TUP(1u));
-  plt.Function(b_sum, -1, 1);
-  for(uint i=0; i<points.d0; i++) plt.Function(basis_trans[i], -1, 1);
-  plt.update();
+  knotPoints.clear();
+  knotTimes.clear();
 }
 
 arr Spline::getCoeffs(double t, uint K, uint derivative) const {
   arr b(K+1), b_0(K+1), db(K+1), db_0(K+1), ddb(K+1), ddb_0(K+1);
   for(uint p=0; p<=degree; p++) {
     b_0=b; b.setZero();
-    if(derivative>0){ db_0=db; db.setZero(); }
-    if(derivative>1){ ddb_0=ddb; ddb.setZero(); }
+    if(derivative>0) { db_0=db; db.setZero(); }
+    if(derivative>1) { ddb_0=ddb; ddb.setZero(); }
     for(uint k=0; k<=K; k++) {
       if(!p) {
-        if(!k && t<times(0)) b(k)=1.;
-        else if(k==K && t>=times(k)) b(k)=1.;
-        else if(times(k)<=t && t<times(k+1)) b(k)=1.;
+        if(!k && t<knotTimes(0)) b(k)=1.;
+        else if(k==K && t>=knotTimes(k)) b(k)=1.;
+        else if(knotTimes(k)<=t && t<knotTimes(k+1)) b(k)=1.;
       } else {
-        if(k+p<times.N) {
-          double xnom = t - times(k);
-          double xden = times(k+p) - times(k);
+        if(k+p<knotTimes.N) {
+          double xnom = t - knotTimes(k);
+          double xden = knotTimes(k+p) - knotTimes(k);
           double x = DIV(xnom, xden, true);
           b(k) = x * b_0(k);
           if(derivative>0) db(k) = DIV(1., xden, true) * b_0(k) + x * db_0(k);
           if(derivative>1) ddb(k) = DIV(2., xden, true) * db_0(k) + x * ddb_0(k);
         }
-        if(k<K && k+p+1<times.N) {
-          double ynom = times(k+p+1) - t;
-          double yden = times(k+p+1) - times(k+1);
+        if(k<K && k+p+1<knotTimes.N) {
+          double ynom = knotTimes(k+p+1) - t;
+          double yden = knotTimes(k+p+1) - knotTimes(k+1);
           double y = DIV(ynom, yden, true);
           b(k) += y * b_0(k+1);
           if(derivative>0) db(k) += DIV(-1., yden, true) * b_0(k+1) + y * db_0(k+1);
@@ -70,7 +53,7 @@ arr Spline::getCoeffs(double t, uint K, uint derivative) const {
         }
       }
     }
-    if(t<times(0) || t>=times.last()) break;
+    if(t<knotTimes(0) || t>=knotTimes.last()) break;
   }
   switch(derivative) {
     case 0:
@@ -83,151 +66,174 @@ arr Spline::getCoeffs(double t, uint K, uint derivative) const {
   HALT("Derivate of order " << derivative << " not yet implemented.");
 }
 
-void Spline::setBasis(uint T, uint K) {
-//  CHECK_EQ(times.N-1,K+1+degree, "wrong number of time knots");
-  basis.resize(T+1, K+1);
-  for(uint t=0; t<=T; t++) basis[t] = getCoeffs((double)t/T, K);
-  transpose(basis_trans, basis);
-}
+#define ZDIV(x,y) (y?x/y:0.)
 
-void Spline::setBasisAndTimeGradient(uint T, uint K) {
-  uint i, j, t, p, m=times.N-1;
-  double time, x, xx, y, yy;
-  CHECK_EQ(m, K+1+degree, "wrong number of time knots");
-  arr b(K+1, T+1), b_0(K+1, T+1), dbt(m+1, K+1, T+1), dbt_0(m+1, K+1, T+1);
-  for(p=0; p<=degree; p++) {
-    if(p>0) { b_0=b; dbt_0=dbt; }
-    for(i=0; i<=K; i++) for(t=0; t<=T; t++) {
-        time = (double)t/(double)T;
-        if(!p) {
-          b(i, t) = 0.;
-          if(times(i)<=time && time<times(i+1)) b(i, t)=1.;
-          if(t==T && i==K && time==times(i+1)) b(i, t)=1.;
-          for(j=0; j<=m; j++) dbt(j, i, t)=0.;
-        } else {
-          xx=times(i+p)-times(i);
-          x=DIV(time-times(i), xx, true);
-          if(i<K) {
-            yy=times(i+p+1)-times(i+1);
-            y=DIV(times(i+p+1)-time, yy, true);
-          } else {
-            yy=1.;
-            y=0.;
-          }
-          b(i, t) = x * b_0(i, t);
-          if(i<K) b(i, t) += y * b_0(i+1, t);
-          for(j=0; j<=m; j++) {
-            dbt(j, i, t) = x * dbt_0(j, i, t);
-            if(i<K) dbt(j, i, t) += y * dbt_0(j, i+1, t);
-            if(j==i)            dbt(j, i, t) += DIV((x-1), xx, true) * b_0(i, t);
-            if(j==i+p)          dbt(j, i, t) -= DIV(x, xx, true) * b_0(i, t);
-            if(i<K && j==i+1)   dbt(j, i, t) += DIV(y, yy, true) * b_0(i+1, t);
-            if(i<K && j==i+p+1) dbt(j, i, t) -= DIV((y-1), yy, true) * b_0(i+1, t);
-          }
+void Spline::getCoeffs2(arr& b, arr& db, arr& ddb, double t, uint degree, double* knotTimes, uint knotN, uint knotTimesN, uint derivatives) {
+  CHECK_EQ(knotN+degree+1, knotTimesN, "");
+
+  b.resize(knotN).setZero();
+  if(derivatives>0) db.resize(knotN).setZero();
+  if(derivatives>1) ddb.resize(knotN).setZero();
+
+  arr b_prev, db_prev, ddb_prev;
+  for(uint p=0; p<=degree; p++) {
+    b_prev=b; b.setZero();
+    if(derivatives>0) { db_prev=db; db.setZero(); }
+    if(derivatives>1) { ddb_prev=ddb; ddb.setZero(); }
+    for(uint k=0; k<knotN; k++) {
+      if(!p) {
+        if(!k && t<knotTimes[0]) b.elem(k)=1.;
+        else if(k==knotN-1 && t>=knotTimes[k]) b.elem(k)=1.;
+        else if(knotTimes[k]<=t && t<knotTimes[k+1]) b.elem(k)=1.;
+      } else {
+        if(k+p<knotTimesN) {
+          double xnom = t - knotTimes[k];
+          double xden = knotTimes[k+p] - knotTimes[k];
+          double x = ZDIV(xnom, xden);
+          b.elem(k) = x * b_prev.elem(k);
+          if(derivatives>0) db.elem(k) = ZDIV(1., xden) * b_prev.elem(k) + x * db_prev.elem(k);
+          if(derivatives>1) ddb.elem(k) = ZDIV(2., xden) * db_prev.elem(k) + x * ddb_prev.elem(k);
+        }
+        if(k<knotN-1 && k+p+1<knotTimesN) {
+          double ynom = knotTimes[k+p+1] - t;
+          double yden = knotTimes[k+p+1] - knotTimes[k+1];
+          double y = ZDIV(ynom, yden);
+          b.elem(k) += y * b_prev.elem(k+1);
+          if(derivatives>0) db.elem(k) += ZDIV(-1., yden) * b_prev.elem(k+1) + y * db_prev.elem(k+1);
+          if(derivatives>1) ddb.elem(k) += ZDIV(-2., yden) * db_prev.elem(k+1) + y * ddb_prev.elem(k+1);
         }
       }
+    }
+    if(t<knotTimes[0] || t>=knotTimes[knotTimesN-1]) break;
   }
-  basis_trans=b;
-  transpose(basis, b);
-  basis_timeGradient=dbt;
 }
 
-void Spline::setUniformNonperiodicBasis() {
-  setUniformNonperiodicBasis(0, points.d0, degree);
+void Spline::eval(arr& x, arr& xDot, arr& xDDot, double t) const {
+#if 0 //computing coeffs for ALL knot points (most zero...)
+//  uint K = knotPoints.d0-1;
+//  arr coeffs = getCoeffs(t, K, derivative);
+  arr coeffs = getCoeffs2(t, degree, knotTimes.p, knotPoints.d0, knotTimes.N, derivative);
+  return (~coeffs * knotPoints).reshape(knotPoints.d1);
+#else //pick out only the LOCAL knot points
+
+  //find the first knotTime >t
+  int offset = knotTimes.rankInSorted(t, rai::lowerEqual<double>, true);
+  offset -= degree+1;
+  if(offset<0) offset=0;
+
+  uint knotN = degree+1;
+  uint knotTimesN = knotN + 1+degree;
+  if(offset+knotTimesN>knotTimes.N) offset = knotTimes.N - knotTimesN;
+
+  //get coeffs
+  arr b, db, ddb;
+  uint derivative=0;
+  if(!!xDot) derivative=1;
+  if(!!xDDot) derivative=2;
+  getCoeffs2(b, db, ddb, t, degree, knotTimes.p+offset, knotN, knotTimesN, derivative);
+
+  //linear combination
+  uint n = knotPoints.d1;
+  if(!!x) x.resize(n).setZero();
+  if(!!xDot) xDot.resize(n).setZero();
+  if(!!xDDot) xDDot.resize(n).setZero();
+  for(uint j=0;j<b.N;j++){
+    if(!!x) for(uint k=0;k<n;k++) x.elem(k) += b.elem(j)*knotPoints(offset+j,k);
+    if(!!xDot) for(uint k=0;k<n;k++) xDot.elem(k) += db.elem(j)*knotPoints(offset+j,k);
+    if(!!xDDot) for(uint k=0;k<n;k++) xDDot.elem(k) += ddb.elem(j)*knotPoints(offset+j,k);
+  }
+#endif
 }
 
-void Spline::set(uint _degree, const arr& x, const arr& t) {
-  CHECK_EQ(x.d0, t.N, "");
+Spline& Spline::set(uint _degree, const arr& _points, const arr& _times, const arr& startVel, const arr& endVel) {
+  CHECK_EQ(_points.nd, 2, "");
+  CHECK_EQ(_points.d0, _times.N, "");
+
   degree = _degree;
+  points=_points;
+  times=_times;
 
-  points = x;
+  //knot points with head and tail
+  knotPoints = _points;
   for(uint i=0; i<degree/2; i++) {
-    points.prepend(x[0]);
-    points.append(x[x.d0-1]);
+    knotPoints.prepend(_points[0]);
+    knotPoints.append(_points[_points.d0-1]);
   }
 
-  uint m=t.N+2*degree;
-  times.resize(m+1);
+  //knot times with head and tail
+  uint m=knotPoints.d0+degree;
+  knotTimes.resize(m+1);
   for(uint i=0; i<=m; i++) {
-    if(i<=degree) times(i)=.0;
-    else if(i>=m-degree) times(i)=t.last();
+    if(i<=degree) knotTimes(i)=_times.first();
+    else if(i>=m-degree) knotTimes(i)=_times.last();
     else if((degree%2)) {
-      times(i) = t(i-degree);
+      knotTimes(i) = _times(i-degree);
     } else {
-      times(i) = .5*(t(i-degree-1)+t(i-degree));
+      knotTimes(i) = .5*(_times(i-degree-1)+_times(i-degree));
     }
   }
+
+  //can also tune startVel and endVel for degree 2
+  if(!!startVel) setDoubleKnotVel(-1, startVel);
+  if(!!endVel) setDoubleKnotVel(points.N-1, endVel);
+
+  CHECK_EQ(knotPoints.d0, knotTimes.N-degree-1 , "");
+
+  return *this;
 }
 
-void Spline::setUniformNonperiodicBasis(uint T, uint nPoints, uint _degree) {
-  degree=_degree;
-  uint i, m;
-  uint K=nPoints - 2*(degree/2) - 1;
-  m=K+1+2*degree;
-  times.resize(m+1);
-  for(i=0; i<=m; i++) {
-    if(i<=degree) times(i)=.0;
-    else if(i>=m-degree) times(i)=1.;
-    else if((degree%2)) {
-      times(i) = double(i-degree)/double(K);
-    } else {
-      times(i) = double(double(i)-.5-degree)/double(K);
+void Spline::append(const arr& _points, const arr& _times){
+  CHECK_EQ(_points.nd, 2, "");
+  CHECK_EQ(_points.d0, _times.N, "");
+
+  CHECK_GE(_times.first(), 0., "append needs to be in relative time, always with _times.first()>=0.");
+  if(!_times.first()){
+    CHECK_LE(maxDiff(points[-1], _points[0]), 1e-10, "when appending with _times.first()=0., the first point needs to be identical to the previous last, making this a double knot");
+  }
+
+  //remember end time
+  double Tend = knotTimes.last();
+
+  points.append(_points);
+  times.append(_times+Tend);
+
+
+  //remove tails
+  knotPoints.resize(knotPoints.d0-degree/2, knotPoints.d1);
+  knotTimes.resizeCopy(knotTimes.N-1-2*(degree/2));
+
+  //append things:
+  knotPoints.append(_points);
+  knotTimes.append(_times+Tend);
+  if(!(degree%2)){
+    for(uint i=knotTimes.N-1;i>=knotTimes.N-_times.N; i--) {
+//      times(i) = .5*(times(i-1)+times(i));
+      knotTimes(i) = .5*(times(i-degree-1)+times(i-degree));
     }
   }
-  if(T) setBasis(T, nPoints-1);
-//  setBasisAndTimeGradient();
+
+  //append tails;
+  for(uint i=0; i<degree/2; i++) knotPoints.append(_points[-1]);
+  knotTimes.append(_times(-1)+Tend,1+2*(degree/2));
+
+  CHECK_EQ(knotPoints.d0, knotTimes.N-degree-1 , "");
 }
 
-arr Spline::eval(double t, uint derivative) const {
-  uint K = points.d0-1;
-  arr coeffs = getCoeffs(t, K, derivative);
-//  if(!derivative){
-//      cout <<"t: " <<t <<" dot: " <<derivative <<" a: " <<coeffs <<endl;
-//      cout <<"t: " <<t <<" dot: " <<derivative <<" a: " <<rai::getCoeffs(t, times({2,4}), 0) <<endl;
-//  }
-  return (~coeffs * points).reshape(points.d1);
+
+void Spline::doubleKnot(uint t){
+  knotPoints.insRows(t + degree/2);
+  knotPoints[t+degree/2] = points[t];
+
+  knotTimes.insert(t+degree+1,times(t));
 }
 
-arr Spline::eval(uint t) const { return (~basis[t]*points).reshape(points.d1); }
-
-arr Spline::eval() const { return basis*points; }
-
-arr Spline::smooth(double lambda) const {
-  CHECK_GE(lambda,  0, "Lambda must be non-negative");
-  uint T = basis.d0 - 1;
-  uint K = basis.d1 - 1;
-  arr ddbasis(T+1, K+1);
-  for(uint t=0; t<=T; t++)
-    ddbasis[t] = getCoeffs((double)t/K, K, 2);
-
-  arr A = ~ddbasis * ddbasis / (double)T;
-  return basis*inverse(eye(K+1) + lambda*A)*points;
-}
-
-void Spline::partial(arr& grad_points, const arr& grad_path) const {
-  CHECK_EQ(grad_path.d1, points.d1, "");
-  grad_points = basis_trans * grad_path;
-}
-
-void Spline::partial(arr& dCdx, arr& dCdt, const arr& dCdf, bool constrain) const {
-  uint K=points.d0-1, T=basis.d0-1;
-  CHECK(dCdf.d0==T+1 && dCdf.d1==points.d1, "");
-  CHECK(basis_timeGradient.N, "");
-  uint n=dCdf.d1, m=K+1+degree, j;
-  dCdx = basis_trans * dCdf;
-  arr X;
-  X.referTo(points);
-  X.reshape((K+1)*n);
-  arr B;
-  B.referTo(basis_timeGradient);
-  B.reshape((m+1)*(K+1), T+1);
-  arr Z = B * dCdf; Z.reshape(m+1, (K+1)*n);
-  dCdt = Z*X;
-  if(constrain) {
-    for(j=0; j<=degree; j++) dCdt(j)=0.;
-    for(j=m-degree; j<=m; j++) dCdt(j)=0.;
-  }
-  dCdt(0)=dCdt(m)=0.;
+void Spline::setDoubleKnotVel(int t, const arr& vel){
+  CHECK_EQ(degree, 2, "NIY");
+  arr a=knotPoints[t+degree/2];
+  arr b=knotPoints[t+degree/2+1];
+  CHECK(maxDiff(a,b)<1e-10,"this is not a double knot!");
+  a -= vel*.5*(knotTimes(t+degree+1)-knotTimes(t+degree));
+  b += vel*.5*(knotTimes(t+degree+2)-knotTimes(t+degree+1));
 }
 
 //==============================================================================
@@ -242,25 +248,25 @@ arr Path::getVelocity(double t) const {
 
 void Path::transform_CurrentBecomes_EndFixed(const arr& current, double t) {
   arr delta = current - eval(t);
-  for(uint i=0; i<points.d0; i++) {
-    double ti = double(i)/double(points.d0-1);
+  for(uint i=0; i<knotPoints.d0; i++) {
+    double ti = double(i)/double(knotPoints.d0-1);
     double a = (1.-ti)/(1.-t);
-    points[i]() += a*delta;
+    knotPoints[i]() += a*delta;
   }
 }
 
 void Path::transform_CurrentFixed_EndBecomes(const arr& end, double t) {
   arr delta = end - eval(1.);
-  for(uint i=0; i<points.d0; i++) {
-    double ti = double(i)/double(points.d0-1);
+  for(uint i=0; i<knotPoints.d0; i++) {
+    double ti = double(i)/double(knotPoints.d0-1);
     double a = (ti-t)/(1.-t);
-    points[i]() += a*delta;
+    knotPoints[i]() += a*delta;
   }
 }
 
 void Path::transform_CurrentBecomes_AllFollow(const arr& current, double t) {
   arr delta = current - eval(t);
-  for(uint i=0; i<points.d0; i++) points[i]() += delta;
+  for(uint i=0; i<knotPoints.d0; i++) knotPoints[i]() += delta;
 }
 
 } //namespace rai

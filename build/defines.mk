@@ -22,10 +22,15 @@ CXXFLAGS += -fopenmp -DOPENMP
 endif
 
 ifeq ($(PYBIND),1)
-DEPEND_UBUNTU += pybind11-dev python3-dev python3 python3-numpy python3-pip python3-distutils
-CXXFLAGS += -DRAI_PYBIND `python3-config --cflags`
+DEPEND_UBUNTU += python3-dev python3 python3-numpy python3-pip python3-distutils
+#pybind11-dev NO! don't use the ubuntu package. Instead use:
+#  pip3 install --user pybind11
+CXXFLAGS += -DRAI_PYBIND `python3-config --cflags` `python3 -m pybind11 --includes`
 LIBS += `python3-config --ldflags`
-CPATH   := $(CPATH):$(BASE)/../pybind11/include::$(BASE)/../../pybind11/include
+#CPATH := $(CPATH):$(BASE)/../pybind11/include::$(BASE)/../../pybind11/include
+
+# sudo update-alternatives --install /usr/bin/python3-config python3 /usr/bin/python3.7 0
+# sudo update-alternatives --install /usr/bin/python3-config python3-config /usr/bin/python3.7-config 0
 endif
 
 ifeq ($(X11),1)
@@ -35,7 +40,7 @@ LIBS += -lX11
 endif
 
 ifeq ($(PNG),1)
-DEPEND_UBUNTU += libpng12-dev
+DEPEND_UBUNTU += libpng-dev
 CXXFLAGS += -DRAI_PNG
 LIBS += -lpng
 endif
@@ -73,12 +78,32 @@ LIBS += -lassimp
 endif
 
 ifeq ($(CERES),1)
+DEPEND_UBUNTU += libceres-dev
 CXXFLAGS += -DRAI_CERES
-CPATHS += $(HOME)/git/ceres-solver/include
-CPATHS += $(HOME)/git/ceres-solver/build/config
-CPATHS += $(HOME)/git/ceres-solver/internal/ceres/miniglog
-LPATHS += $(HOME)/git/ceres-solver/build/lib
-LIBS += -lceres -lglog -lcholmod -llapack -lblas -lpthread  /usr/lib/x86_64-linux-gnu/libspqr.so /usr/lib/x86_64-linux-gnu/libtbbmalloc.so /usr/lib/x86_64-linux-gnu/libtbb.so /usr/lib/x86_64-linux-gnu/libcholmod.so /usr/lib/x86_64-linux-gnu/libccolamd.so /usr/lib/x86_64-linux-gnu/libcamd.so /usr/lib/x86_64-linux-gnu/libcolamd.so /usr/lib/x86_64-linux-gnu/libamd.so /usr/lib/x86_64-linux-gnu/liblapack.so /usr/lib/x86_64-linux-gnu/libf77blas.so /usr/lib/x86_64-linux-gnu/libatlas.so /usr/lib/x86_64-linux-gnu/libsuitesparseconfig.so /usr/lib/x86_64-linux-gnu/librt.so /usr/lib/x86_64-linux-gnu/libcxsparse.so /usr/lib/x86_64-linux-gnu/liblapack.so /usr/lib/x86_64-linux-gnu/libf77blas.so /usr/lib/x86_64-linux-gnu/libatlas.so /usr/lib/x86_64-linux-gnu/libsuitesparseconfig.so /usr/lib/x86_64-linux-gnu/librt.so /usr/lib/x86_64-linux-gnu/libcxsparse.so /usr/lib/x86_64-linux-gnu/libgflags.so.2.2.1 -lpthread /usr/lib/x86_64-linux-gnu/libglog.so
+#CPATHS += $(HOME)/git/ceres-solver/include
+#CPATHS += $(HOME)/git/ceres-solver/build/config
+#CPATHS += $(HOME)/git/ceres-solver/internal/ceres/miniglog
+#LPATHS += $(HOME)/git/ceres-solver/build/lib
+LIBS += -lceres
+#-lglog -lcholmod -llapack -lblas -lpthread
+#/usr/lib/x86_64-linux-gnu/libspqr.so /usr/lib/x86_64-linux-gnu/libtbbmalloc.so /usr/lib/x86_64-linux-gnu/libtbb.so /usr/lib/x86_64-linux-gnu/libcholmod.so /usr/lib/x86_64-linux-gnu/libccolamd.so /usr/lib/x86_64-linux-gnu/libcamd.so /usr/lib/x86_64-linux-gnu/libcolamd.so /usr/lib/x86_64-linux-gnu/libamd.so /usr/lib/x86_64-linux-gnu/liblapack.so /usr/lib/x86_64-linux-gnu/libf77blas.so /usr/lib/x86_64-linux-gnu/libatlas.so /usr/lib/x86_64-linux-gnu/libsuitesparseconfig.so /usr/lib/x86_64-linux-gnu/librt.so /usr/lib/x86_64-linux-gnu/libcxsparse.so /usr/lib/x86_64-linux-gnu/liblapack.so /usr/lib/x86_64-linux-gnu/libf77blas.so /usr/lib/x86_64-linux-gnu/libatlas.so /usr/lib/x86_64-linux-gnu/libsuitesparseconfig.so /usr/lib/x86_64-linux-gnu/librt.so /usr/lib/x86_64-linux-gnu/libcxsparse.so /usr/lib/x86_64-linux-gnu/libgflags.so.2.2.1 -lpthread /usr/lib/x86_64-linux-gnu/libglog.so
+endif
+
+ifeq ($(NLOPT),1)
+DEPEND_UBUNTU += libnlopt-cxx-dev gfortran
+CXXFLAGS += -DRAI_NLOPT `pkg-config --cflags nlopt`
+LIBS     += `pkg-config --libs nlopt`
+endif
+
+ifeq ($(IPOPT),1)
+DEPEND_UBUNTU += coinor-libipopt-dev
+CXXFLAGS += -DRAI_IPOPT `pkg-config --cflags ipopt`
+LIBS     += `pkg-config --libs ipopt`
+endif
+
+ifeq ($(OMPL),1)
+CXXFLAGS += -DRAI_OMPL
+CPATHS  += /usr/local/include/ompl-1.6/
 endif
 
 ifeq ($(CUDA),1)
@@ -165,7 +190,7 @@ LIBS     += `pkg-config --libs  gtk+-3.0`
 endif
 
 ifeq ($(GRAPHVIZ),1)
-DEPEND_UBUNTU += graphviz-dev
+DEPEND_UBUNTU += graphviz graphviz-dev
 CXXFLAGS += -DRAI_GRAPHVIZ
 LIBS += -lcgraph -lgvc
 endif
@@ -310,8 +335,8 @@ DEPEND_UBUNTU += libpcl-dev
 EIGEN = 1
 #QHULL = 1
 CXXFLAGS  +=  -DRAI_PCL -DEIGEN_USE_NEW_STDVECTOR -DEIGEN_YES_I_KNOW_SPARSE_MODULE_IS_NOT_STABLE_YET
-LIBS += -lpcl_keypoints -lpcl_visualization -lpcl_registration -lpcl_segmentation -lpcl_features -lpcl_surface -lpcl_tracking -lpcl_filters -lpcl_sample_consensus -lpcl_search -lpcl_kdtree -lpcl_octree -lpcl_common
-CPATH := $(CPATH):/usr/include/pcl-1.7:
+LIBS += -lpcl_keypoints -lpcl_visualization -lpcl_registration -lpcl_segmentation -lpcl_features -lpcl_surface -lpcl_tracking -lpcl_filters -lpcl_sample_consensus -lpcl_search -lpcl_kdtree -lpcl_octree -lpcl_common -lboost_system
+CPATH := $(CPATH):/usr/include/pcl-1.8:
 
 #CPATH := $(CPATH):/opt/ros/$(ROS_VERSION)/include/pcl_ros:/usr/include/eigen3:/usr/include/pcl-1.7:
 #CPATH := $(CPATH):/usr/include/eigen3:/home/lib/include/pcl-1.7:
@@ -322,7 +347,8 @@ endif
 
 ifeq ($(EIGEN),1)
 DEPEND_UBUNTU += libeigen3-dev
-CXXFLAGS += -DRAI_EIGEN
+CXXFLAGS += -DRAI_EIGEN -fopenmp
+LDFLAGS += -fopenmp
 CPATH := $(CPATH):/usr/include/eigen3
 endif
 
@@ -441,7 +467,7 @@ LIBS += -lpthread -lrt\
 -lSimulationController 
 endif
 
-ifeq ($(BULLET),1)
+ifeq ($(BULLET_LOCAL),1)
 #BULLET_PATH=$(HOME)/git/bullet3
 CXXFLAGS  += -DRAI_BULLET -DBT_USE_DOUBLE_PRECISION
 CPATH := $(HOME)/opt/include/bullet/:$(CPATH)
@@ -449,6 +475,12 @@ CPATH := $(HOME)/opt/include/bullet/:$(CPATH)
 #CPATH := $(CPATH):$(BULLET_PATH)/src
 #btLIB = _gmake_x64_release
 LIBS += -lBulletSoftBody -lBulletDynamics -lBulletCollision  -lLinearMath
+endif
+
+ifeq ($(BULLET),1)
+DEPEND_UBUNTU += libbullet-dev
+CXXFLAGS += -DRAI_BULLET `pkg-config --cflags bullet`
+LIBS     += `pkg-config --libs bullet`
 endif
 
 ifeq ($(PORTAUDIO),1)

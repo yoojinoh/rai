@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -19,14 +19,14 @@ void TM_ImpulsExchange::phi(arr& y, arr& J, const ConfigurationL& Ktuple) {
   //acceleration (=impulse change) of object 1
   TM_Default pos1(TMT_pos, i);
   pos1.order=2;
-  pos1.Feature::__phi(a1, (!!J?J1:NoArr), Ktuple);
+  pos1.Feature::eval(a1, (!!J?J1:NoArr), Ktuple);
 
 //  {
 //    rai::Configuration &K = *Ktuple.last();
 //    rai::Frame *a = K(i)->getUpwardLink();
 //    if(a->flags && a->flags & (1<<FL_kinematic)){
 //      pos1.order=1;
-//      pos1.Feature::__phi(a1, (!!J?J1:NoArr), Ktuple);
+//      pos1.Feature::eval(a1, (!!J?J1:NoArr), Ktuple);
 //      a1 *= -1.;
 //      if(!!J) J1 *= -1.;
 //    }
@@ -35,7 +35,7 @@ void TM_ImpulsExchange::phi(arr& y, arr& J, const ConfigurationL& Ktuple) {
   //acceleration (=impulse change) of object 2
   TM_Default pos2(TMT_pos, j);
   pos2.order=2;
-  pos2.Feature::__phi(a2, (!!J?J2:NoArr), Ktuple);
+  pos2.Feature::eval(a2, (!!J?J2:NoArr), Ktuple);
 
   //projection matrix onto 'table' to which object 2 will be attached
   arr P;
@@ -127,11 +127,11 @@ void TM_ImpulsExchange_weak::phi(arr& y, arr& J, const ConfigurationL& Ktuple) {
 
   TM_Default pos1(TMT_pos, i);
   pos1.order=2;
-  pos1.Feature::__phi(a1, (!!J?J1:NoArr), Ktuple);
+  pos1.Feature::eval(a1, (!!J?J1:NoArr), Ktuple);
 
   TM_Default pos2(TMT_pos, j);
   pos2.order=2;
-  pos2.Feature::__phi(a2, (!!J?J2:NoArr), Ktuple);
+  pos2.Feature::eval(a2, (!!J?J2:NoArr), Ktuple);
 
   arr c, Jc;
   F_PairCollision coll(i, j, F_PairCollision::_vector, true);

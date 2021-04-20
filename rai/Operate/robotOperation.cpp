@@ -1,30 +1,29 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
     --------------------------------------------------------------  */
 
 #include "robotOperation.h"
-#include "splineRunner.h"
+#include "../Control/splineRunner.h"
 #include "../RosCom/roscom.h"
 #include "../RosCom/baxter.h"
 #include "../Gui/opengl.h"
 
 //#include "SimulationThread_self.h"
-extern bool Geo_mesh_drawColors;
 
 struct sRobotOperation : Thread, GLDrawer {
   BaxterInterface baxter;
   arr q0, q_ref;
-  StringA jointNames;
+  uintA jointIDs;
   rai::Configuration K_ref, K_baxter;
   OpenGL gl;
   bool useBaxter=false;
   bool sendToBaxter=false;
 
-  SplineRunner spline;
+  rai::SplineRunner spline;
   double dt; // time stepping interval
 
   sRobotOperation(const rai::Configuration& _K, double _dt, bool useRosDefault)
@@ -40,7 +39,7 @@ struct sRobotOperation : Thread, GLDrawer {
     gl.camera.setDefault();
 
     q0 = _K.getJointState();
-    jointNames = _K.getJointNames();
+    jointIDs = _K.getJointIDs();
     if(useBaxter) K_baxter = K_ref;
     threadLoop();
   }
@@ -83,12 +82,12 @@ struct sRobotOperation : Thread, GLDrawer {
       if(q_real.N == K_baxter.getJointStateDimension()) {
         K_baxter.setJointState(q_real);
       }
-      Geo_mesh_drawColors=false;
+      gl.drawOptions.drawColors=false;
       glColor(.8, .2, .2, .5);
-      gl.drawMode_idColor = true;
+      gl.drawOptions.drawMode_idColor = true;
       K_baxter.glDraw(gl);
-      Geo_mesh_drawColors=true;
-      gl.drawMode_idColor = false;
+      gl.drawOptions.drawColors=true;
+      gl.drawOptions.drawMode_idColor = false;
     }
   }
 
@@ -173,8 +172,8 @@ double RobotOperation::timeToGo() {
 
 arr RobotOperation::getHomePose() { return self->q0; }
 
-const StringA& RobotOperation::getJointNames() {
-  return self->jointNames;
+const uintA& RobotOperation::getJointIDs() {
+  return self->jointIDs;
 }
 
 arr RobotOperation::getJointPositions(const StringA& joints) {
@@ -195,6 +194,6 @@ bool RobotOperation::getGripperOpened(const std::string& whichArm) {
 
 void RobotOperation::sync(rai::Configuration& K) {
   auto lock = self->stepMutex(RAI_HERE);
-  K.setJointState(getJointPositions(), self->jointNames);
+  K.setJointState(getJointPositions(), self->jointIDs);
 }
 

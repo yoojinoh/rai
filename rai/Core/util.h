@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -15,6 +15,8 @@
 #include <string.h>
 #include <memory>
 #include <climits>
+#include <mutex>
+#include <functional>
 
 //----- if no system flag, I assume Linux
 #if !defined RAI_MSVC && !defined RAI_Cygwin && !defined RAI_Linux && !defined RAI_MinGW && !defined RAI_Darwin
@@ -86,10 +88,12 @@ using std::make_shared;
 namespace rai {
 extern int argc;
 extern char** argv;
+extern std::string startDir;
 extern bool IOraw;  ///< stream modifier for some classes (Mem in particular)
 extern uint lineCount;
 extern int verboseLevel;
-extern int interactivity;
+
+enum ArgWord { _left, _right, _sequence, _path };
 
 //----- execute a system command
 void system(const char* cmd);
@@ -119,15 +123,15 @@ double MIN(double a, double b);
 double MAX(double a, double b);
 uint MAX(uint a, uint b);
 int MAX(int a, int b);
-inline void maxEq(double& x, double a){ if(a>x) x=a; }
+inline void maxEq(double& x, double a) { if(a>x) x=a; }
 double indicate(bool expr);
 double modMetric(double x, double y, double mod);
 double sign(double x);
 double sign0(double x);
 double linsig(double x);
 //void   clip(double& x, double a, double b);
-double phi(double dx, double dy);
-double dphi(double x, double y, double dx, double dy);
+//double phi(double dx, double dy);
+//double dphi(double x, double y, double dx, double dy);
 double DIV(double x, double y, bool force=false);
 double sigmoid11(double x);
 double sigmoid(double x);
@@ -152,18 +156,11 @@ double eqConstraintCost(double h, double margin, double power);
 double d_eqConstraintCost(double h, double margin, double power);
 
 //----- time access
-double clockTime(bool today=true); //(really on the clock)
-timespec clockTime2();
+double clockTime(); //(really on the clock)
 double realTime(); //(since process start)
 double cpuTime();
-double sysTime();
-double totalTime();
-double toTime(const tm& t);
-char* date();
-char* date(double sec);
-char* date2(bool subsec=false);
-char* date2(double sec, bool subsec);
-void wait(double sec, bool msg_on_fail=true);
+std::string date(bool forFileName=false);
+void wait(double sec);
 bool wait(bool useX11=true);
 
 //----- timer functions
@@ -188,12 +185,20 @@ template<class T> void getParameter(T& x, const char* tag, const T& Default);
 template<class T> void getParameter(T& x, const char* tag);
 template<class T> bool checkParameter(const char* tag);
 
-template<class T> void putParameter(const char* tag, const T& x);
-template<class T> bool getFromMap(T& x, const char* tag);
+template<class T> struct Parameter{
+  const char* key;
+  T value;
+  Parameter(const char* _key) : key(_key) { value = getParameter<T>(_key); }
+  const T& operator()(){ return value; }
+};
+#define raiPARAM(type, name) \
+  rai::Parameter<type> name = {#name}; \
+  auto set_##name(type _##name){ name.value=_##name; return *this; }
 
 //----- get verbose level
 uint getVerboseLevel();
 bool getInteractivity();
+bool getDisableGui();
 }
 
 //----- parsing strings in a stream
@@ -294,15 +299,6 @@ inline rai::String operator+(const rai::String& a, const char* b) { rai::String 
 
 //===========================================================================
 //
-// string-filling routines
-//
-
-namespace rai {
-rai::String getNowString();  //TODO:compare with getDate2
-}
-
-//===========================================================================
-//
 // logging
 //
 
@@ -310,6 +306,7 @@ namespace rai {
 /// An object that represents a log file and/or cout logging, together with log levels read from a cfg file
 struct LogObject {
   std::ofstream fil;
+  std::function<void(const char*,int)> callback;
   const char* key;
   int logCoutLevel, logFileLevel;
   LogObject(const char* key, int defaultLogCoutLevel=0, int defaultLogFileLevel=0);
@@ -330,11 +327,12 @@ struct LogToken {
   ~LogToken(); //that's where the magic happens!
   std::ostream& os() { return msg; }
 };
+
+extern LogObject _log;
+
 }
 
-extern rai::LogObject _log;
-
-#define LOG(log_level) _log.getNonConst().getToken(log_level, __FILE__, __func__, __LINE__).os()
+#define LOG(log_level) rai::_log.getNonConst().getToken(log_level, __FILE__, __func__, __LINE__).os()
 
 void setLogLevels(int fileLogLevel=3, int consoleLogLevel=2);
 
@@ -358,13 +356,13 @@ namespace rai {
 extern String errString;
 }
 
-
 #ifndef HALT
 #  define RAI_MSG(msg){ LOG(-1) <<msg; }
 #  define THROW(msg){ LOG(-1) <<msg; throw std::runtime_error(rai::errString.p); }
-#  define HALT(msg){ LOG(-2) <<msg; throw std::runtime_error(rai::errString.p); exit(1); }
-#  define NIY  { LOG(-2) <<"not implemented yet"; exit(1); }
-#  define NICO { LOG(-2) <<"not implemented with this compiler options: usually this means that the implementation needs an external library and a corresponding compiler option - see the source code"; exit(1); }
+#  define HALT(msg){ LOG(-2) <<msg; throw std::runtime_error(rai::errString.p); }
+#  define NIY  { LOG(-2) <<"not implemented yet"; exit(2); }
+#  define NICO { LOG(-2) <<"not implemented with this compiler options: usually this means that the implementation needs an external library and a corresponding compiler option - see the source code"; exit(3); }
+#  define DEPR { LOG(0) <<"this method is deprecated -- please see the code to replace (should be only a rename or one liner)"; }
 #endif
 
 //----- check macros:
@@ -461,7 +459,6 @@ inline bool operator==(const FileToken&, const FileToken&) { return false; }
 }
 #define FILE(filename) (rai::FileToken(filename, false)()) //it needs to return a REFERENCE to a local scope object
 
-
 //===========================================================================
 //
 // give names to Enum (for pipe << >> )
@@ -473,7 +470,7 @@ struct Enum {
   enum_T x;
   static const char* names [];
   Enum():x((enum_T)-1) {}
-  explicit Enum(enum_T y):x(y) {}
+  Enum(enum_T y):x(y) {}
   explicit Enum(const rai::String& str):Enum() { operator=(str); }
   const enum_T& operator=(enum_T y) { x=y; return x; }
   bool operator==(const enum_T& y) const { return x==y; }
@@ -496,9 +493,10 @@ struct Enum {
     if(!good) {
       rai::String all;
       for(int i=0; names[i]; i++) all <<names[i] <<' ';
-      LOG(-2) <<"Enum::read could not find the keyword '" <<str <<"'. Possible Enum keywords: " <<all;
+      HALT("Enum::read could not find the keyword '" <<str <<"'. Possible Enum keywords: " <<all);
+    }else{
+      CHECK(str.p && !strcmp(names[x], str.p), "");
     }
-    CHECK(!strcmp(names[x], str.p), "");
   }
   static bool contains(const rai::String& str) {
     for(int i=0; names[i]; i++) {
@@ -534,11 +532,9 @@ class Rnd {
   int32_t rpoint;     /* Feldindex    */
   int32_t rfield[256];   /* Schieberegisterfeld  */
 
-
  public:
   /// ...
   Rnd() { ready=false; }
-
 
  public:/// @name initialization
   /// initialize with a specific seed
@@ -609,9 +605,7 @@ struct Inotify {
 //
 
 struct Mutex {
-#ifndef RAI_MSVC
-  pthread_mutex_t mutex;
-#endif
+  std::mutex mutex;
   int state; ///< 0=unlocked, otherwise=syscall(SYS_gettid)
   uint recursive; ///< number of times it's been locked
   const char* lockInfo;
@@ -620,18 +614,12 @@ struct Mutex {
   void lock(const char* _lockInfo);
   void unlock();
 
-  struct Token {
-    Mutex& m;
-    Token(Mutex& m, const char* _lockInfo) : m(m) { m.lock(_lockInfo); }
-    ~Token() { m.unlock(); }
-  };
-  struct Token operator()(const char* _lockInfo) { return Token(*this, _lockInfo); }
+  typedef std::unique_lock<std::mutex> Token;
+  Token operator()(const char* _lockInfo) { lockInfo=_lockInfo; return Token(mutex); }
 
-  template<class T> struct TypedToken {
-    Mutex& m;
+  template<class T> struct TypedToken : Token {
     T* data;
-    TypedToken(Mutex& m, T* data, const char* _lockInfo) : m(m), data(data) { m.lock(_lockInfo); }
-    ~TypedToken() { m.unlock(); }
+    TypedToken(Mutex& m, T* data, const char* _lockInfo) : Token(m.mutex), data(data) { m.lockInfo=_lockInfo; }
     T* operator->() { return data; }
     operator T& () { return *data; }
     T& operator()() { return *data; }
@@ -657,15 +645,13 @@ struct Singleton {
     return singleton;
   }
 
-  T* operator->() const { return &getSingleton(); }
-  
   Singleton() {}
   Singleton(Singleton const&) = delete;
   void operator=(Singleton const&) = delete;
 
   ~Singleton() {}
 
-  Mutex::TypedToken<T> operator()(){ return getMutex()(&getSingleton(), RAI_HERE); }
+  Mutex::TypedToken<T> operator()() { return getMutex()(&getSingleton(), RAI_HERE); }
 };
 
 //===========================================================================
@@ -673,9 +659,25 @@ struct Singleton {
 // just a hook to make things gl drawable
 //
 
+struct OpenGL;
+struct OpenGLDrawOptions{
+  bool drawWires=false;
+  bool drawColors=true;
+  bool drawMode_idColor=false;
+  bool drawVisualsOnly=false;
+
+  bool drawShapes=true;
+  bool drawProxies=true;
+  bool drawJoints=false;
+  bool drawFrameNames=false;
+  bool drawZlines=false;
+
+  float pclPointSize=-1.;
+};
 struct GLDrawer {
-  virtual void glDraw(struct OpenGL&) = 0;
+  virtual void glDraw(OpenGL&) = 0;
   virtual ~GLDrawer() {}
+  static OpenGLDrawOptions& glDrawOptions(OpenGL&);
 };
 
 //===========================================================================
@@ -704,9 +706,9 @@ struct CoutToken {
 // to register a type
 //
 
-namespace rai{
-  struct Node;
-  struct Graph;
+namespace rai {
+struct Node;
+struct Graph;
 }
 
 struct Type {
@@ -755,4 +757,4 @@ template <typename T> T clip(T& x, const T& lower, const T& upper) {
 }
 
 std::string getcwd_string();
-const char* NAME(const std::type_info& type);
+const char* niceTypeidName(const std::type_info& type);

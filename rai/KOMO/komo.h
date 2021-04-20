@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -13,9 +13,15 @@
 #include "../Optim/optimization.h"
 #include "../Optim/constrained.h"
 #include "../Optim/KOMO_Problem.h"
-#include "../Optim/newOptim.h"
+#include "../Optim/MathematicalProgram.h"
 #include "../Kin/switch.h"
 #include "../Kin/featureSymbols.h"
+
+//===========================================================================
+
+namespace rai {
+  struct FclInterface;
+}
 
 //===========================================================================
 
@@ -45,7 +51,7 @@ enum SkeletonSymbol {
   SY_dynamicTrans,
   SY_quasiStatic,
   SY_quasiStaticOn,
-  SY_liftDownUp, //old
+  SY_downUp, //old
   SY_break,
 
   //interactions:
@@ -58,6 +64,10 @@ enum SkeletonSymbol {
   SY_magic,
   SY_magicTrans,
 
+  //grasps/placements:
+  SY_topBoxGrasp,
+  SY_topBoxPlace,
+
   SY_push,  //old
   SY_graspSlide, //old
 
@@ -69,6 +79,13 @@ enum SkeletonSymbol {
   SY_alignByInt,
 
   SY_makeFree,
+  SY_forceBalance,
+
+  SY_touchBoxNormalX,
+  SY_touchBoxNormalY,
+  SY_touchBoxNormalZ,
+
+  SY_end,
 
 };
 
@@ -85,8 +102,17 @@ stdOutPipe(SkeletonEntry)
 
 typedef rai::Array<SkeletonEntry> Skeleton;
 
-intA getSwitchesFromSkeleton(const Skeleton& S);
+intA getSwitchesFromSkeleton(const Skeleton& S, const rai::Configuration& world);
+double getMaxPhaseFromSkeleton(const Skeleton& S);
 void writeSkeleton(std::ostream& os, const Skeleton& S, const intA& switches= {});
+Skeleton readSkeleton(std::istream& is);
+Skeleton readSkeleton2(std::istream& is);
+
+//===========================================================================
+
+namespace rai {
+enum KOMOsolver { KS_none=-1, KS_dense=0, KS_sparse, KS_banded, KS_sparseFactored, KS_NLopt, KS_Ipopt, KS_Ceres };
+}
 
 //===========================================================================
 
@@ -98,35 +124,32 @@ struct KOMO : NonCopyable {
   double tau=0.;               ///< real time duration of single step (used when evaluating feature space velocities/accelerations)
   uint k_order=0;              ///< the (Markov) order of the KOMO problem (default 2)
   rai::Array<ptr<Objective>> objectives;    ///< list of objectives
+  rai::Array<ptr<GroundedObjective>> objs;
   rai::Array<rai::KinematicSwitch*> switches;  ///< list of kinematic switches along the motion
 
   //-- internals
-  rai::Configuration world;   ///< original world; which is the blueprint for all time-slice worlds (almost const: only makeConvexHulls modifies it)
-  ConfigurationL configurations;       ///< copies for each time slice; including kinematic switches; only these are optimized
-  bool useSwift;               ///< whether swift (collisions/proxies) is evaluated whenever new configurations are set (needed if features read proxy list)
-
-  //-- experimental!
-  rai::Configuration pathConfig;
-  rai::Array<ptr<GroundedObjective>> objs;
+  rai::Configuration world;       ///< original configuration; which is the blueprint for all time-slice worlds (almost const: only makeConvexHulls modifies it)
+  rai::Configuration pathConfig;  ///< configuration containing full path (T+k_order copies of world, with switches applied)
+  uintA orgJointIndices;          ///< set of joint IDs (IDs of frames with dofs) of the original world
+  FrameL timeSlices;              ///< the original timeSlices of the pathConfig (when switches add frames, pathConfig.frames might differ from timeSlices - otherwise not)
+  bool computeCollisions;         ///< whether swift or fcl (collisions/proxies) is evaluated whenever new configurations are set (needed if features read proxy list)
+  shared_ptr<rai::FclInterface> fcl;
+  shared_ptr<SwiftInterface> swift;
+  bool switchesWereApplied = false; //TODO: apply them directly? Would only work when no frames were added?
 
   //-- optimizer
-  bool denseOptimization=false;///< calls optimization with a dense (instead of banded) representation
-  bool sparseOptimization=false;///< calls optimization with a sparse (instead of banded) representation
-  OptConstrained *opt=0;       ///< optimizer; created in run()
+  rai::KOMOsolver solver=rai::KS_sparse;
   arr x, dual;                 ///< the primal and dual solution
-  arr z, splineB;              ///< when a spline representation is used: z are the nodes; splineB the B-spline matrix; x = splineB * z
-  arr bound_lo, bound_up;      ///< bounds for clipping within Newton
-  //return values
-  double sos, eq, ineq;
 
   //-- verbosity only: buffers of all feature values computed on last set_x
+  double sos, eq, ineq;
   arr featureValues;           ///< storage of all features in all time slices
-  arrA featureJacobians;           ///< storage of all features in all time slices
+  arrA featureJacobians;       ///< storage of all features in all time slices
   ObjectiveTypeA featureTypes; ///< storage of all feature-types in all time slices
-  ptr<struct OpenGL> gl;              ///< internal only: used in 'displayTrajectory'
+  StringA featureNames;
   int verbose;                 ///< verbosity level
   int animateOptimization=0;   ///< display the current path for each evaluation during optimization
-  double runTime=0.;           ///< measured run time
+  double timeTotal=0.;           ///< measured run time
   double timeCollisions=0., timeKinematics=0., timeNewton=0., timeFeatures=0.;
   ofstream* logFile=0;
 
@@ -134,12 +157,11 @@ struct KOMO : NonCopyable {
   ~KOMO();
 
   //-- setup the problem
-  void setModel(const rai::Configuration& C, bool _useSwift=true);
+  void setModel(const rai::Configuration& C, bool _computeCollisions=true);
   void setTiming(double _phases=1., uint _stepsPerPhase=30, double durationPerPhase=5., uint _k_order=2);
 
   //-- higher-level default setups
   void setIKOpt(); ///< setTiming(1., 1, 1., 1); and velocity objective
-  void setDiscreteOpt(uint k); ///< setTiming(k, 1, 1., 1);
 
   //===========================================================================
   //
@@ -150,15 +172,12 @@ struct KOMO : NonCopyable {
    * they allow the user to add an objective, or a kinematic switch in the problem definition
    * Typically, the user does not call them directly, but uses the many methods below
    * Think of all of the below as examples for how to set arbirary objectives/switches yourself */
-  ptr<struct Objective> addObjective(const arr& times, const ptr<Feature>& f,
+  ptr<struct Objective> addObjective(const arr& times, const ptr<Feature>& f, const StringA& frames,
                                      ObjectiveType type, const arr& scale=NoArr, const arr& target=NoArr, int order=-1, int deltaFromStep=0, int deltaToStep=0);
   ptr<struct Objective> addObjective(const arr& times, const FeatureSymbol& feat, const StringA& frames,
                                      ObjectiveType type, const arr& scale=NoArr, const arr& target=NoArr, int order=-1, int deltaFromStep=0, int deltaToStep=0);
+  void clearObjectives(); ///< clear all objective
 
-  void addSwitch(double time, bool before, rai::KinematicSwitch* sw);
-  void addSwitch(double time, bool before, rai::JointType type, rai::SwitchInitializationType init,
-                 const char* ref1, const char* ref2,
-                 const rai::Transformation& jFrom=NoTransformation, const rai::Transformation& jTo=NoTransformation);
   void addContact_slide(double startTime, double endTime, const char* from, const char* to);
   void addContact_stick(double startTime, double endTime, const char* from, const char* to);
   void addContact_elasticBounce(double time, const char* from, const char* to, double elasticity=.8, double stickiness=0.);
@@ -167,16 +186,15 @@ struct KOMO : NonCopyable {
   //  void addContact_Relaxed(double startTime, double endTime, const char *from, const char* to);
   void addContact_staticPush(double startTime, double endTime, const char* from, const char* to);
 
-  void setBounds();       ///< define the bounds (passed to the constrained optimization) based on the limit definitions of all DOFs
-  void clearObjectives(); ///< clear all objective
+  void getBounds(arr& bounds_lo, arr& bounds_up);       ///< define the bounds (passed to the constrained optimization) based on the limit definitions of all DOFs
 
   //===========================================================================
   //
   // mid-level ways to define objectives: typically adding one specific objective
   //
 
-  void add_qControlObjective(const arr& times, uint order, double scale=1., const arr& target=NoArr, int deltaFromStep=0, int deltaToStep=0);
-  void addSquaredQuaternionNorms(double startTime=0., double endTime=-1., double prec=3e0);
+  ptr<struct Objective> add_qControlObjective(const arr& times, uint order, double scale=1., const arr& target=NoArr, int deltaFromStep=0, int deltaToStep=0);
+  void addSquaredQuaternionNorms(const arr& times=NoArr, double scale=3e0);
 
   void add_collision(bool hardConstraint, double margin=.0, double prec=1e1);
   void add_jointLimits(bool hardConstraint, double margin=.05, double prec=1.);
@@ -184,56 +202,33 @@ struct KOMO : NonCopyable {
   void setSlow(double startTime, double endTime, double prec=1e1, bool hardConstrained=false);
   void setSlowAround(double time, double delta, double prec=1e1, bool hardConstrained=false);
 
-
   //-- core kinematic switch symbols of skeletons
-  void addSwitch_mode(SkeletonSymbol prevMode, SkeletonSymbol newMode,
-                      double time, double endTime,
-                      const char* prevFrom, const char* newFrom, const char* obj);
-  void addSwitch_stable(double time, double endTime, const char* from, const char* to);
-  void addSwitch_stableOn(double time, double endTime, const char* from, const char* to);
+protected:
+  //low-level add dof switches
+  void addSwitch(const arr& times, bool before, rai::KinematicSwitch* sw);
+  rai::KinematicSwitch* addSwitch(const arr& times, bool before, rai::JointType type, rai::SwitchInitializationType init,
+                 const char* ref1, const char* ref2,
+                 const rai::Transformation& jFrom=NoTransformation, const rai::Transformation& jTo=NoTransformation);
+public:
+  //add a mode switch: both, the low-level dof switches and corresponding constraints of consistency
+  void addModeSwitch(const arr& times, SkeletonSymbol newMode, const StringA& frames, bool firstSwitch);
+
+  //1-liner specializations of setModeSwitch:
+  void addSwitch_stable(double time, double endTime, const char* prevFrom, const char* from, const char* to, bool firstSwitch=true);
+  void addSwitch_stableOn(double time, double endTime, const char* prevFrom, const char* from, const char* to, bool firstSwitch);
   void addSwitch_dynamic(double time, double endTime, const char* from, const char* to, bool dampedVelocity=false);
   void addSwitch_dynamicOn(double time, double endTime, const char* from, const char* to);
   void addSwitch_dynamicOnNewton(double time, double endTime, const char* from, const char* to);
   void addSwitch_dynamicTrans(double time, double endTime, const char* from, const char* to);
   void addSwitch_magic(double time, double endTime, const char* from, const char* to, double sqrAccCost, double sqrVelCost);
   void addSwitch_magicTrans(double time, double endTime, const char* from, const char* to, double sqrAccCost);
-  void addSwitch_on(double time, const char* from, const char* to, bool copyInitialization=false);
-
 
   //-- objectives - logic level (used within LGP)
-  void setSkeleton(const Skeleton& S, bool ignoreSwitches=false);
-
-
-  //macros for pick-and-place in CGO -- should perhaps not be here.. KOMOext?
-  void add_StableRelativePose(const std::vector<int>& confs, const char* gripper, const char* object) {
-    for(uint i=1; i<confs.size(); i++)
-      addObjective(ARR(confs[0], confs[i]), FS_poseRel, {gripper, object}, OT_eq);
-    world.makeObjectsFree({object});
-  }
-  void add_StablePose(const std::vector<int>& confs, const char* object) {
-    for(uint i=1; i<confs.size(); i++)
-      addObjective(ARR(confs[0], confs[i]), FS_pose, {object}, OT_eq);
-    world.makeObjectsFree({object});
-  }
-  void add_grasp(int conf, const char* gripper, const char* object) {
-    addObjective(ARR(conf), FS_distance, {gripper, object}, OT_eq);
-  }
-  void add_place(int conf, const char* object, const char* table) {
-    addObjective(ARR(conf), FS_aboveBox, {table, object}, OT_ineq);
-    addObjective(ARR(conf), FS_standingAbove, {table, object}, OT_eq);
-    addObjective(ARR(conf), FS_vectorZ, {object}, OT_sos, {}, {0., 0., 1.});
-  }
-  void add_resting(int conf1, int conf2, const char* object) {
-    addObjective(ARR(conf1, conf2), FS_pose, {object}, OT_eq);
-  }
-  void add_restingRelative(int conf1, int conf2, const char* object, const char* tableOrGripper) {
-    addObjective(ARR(conf1, conf2), FS_poseRel, {tableOrGripper, object}, OT_eq);
-  }
+  void setSkeleton(const Skeleton& S);
+  void setSkeleton(const Skeleton& S, rai::ArgWord sequenceOrPath);
 
   //advanced:
   void setPairedTimes();
-  void activateCollisions(const char* s1, const char* s2);
-  void deactivateCollisions(const char* s1, const char* s2);
   void addTimeOptimization();
 
   //===========================================================================
@@ -241,11 +236,31 @@ struct KOMO : NonCopyable {
   // optimizing, getting results, and verbosity
   //
 
-  //-- initialization
-  void setConfiguration(int t, const arr& q); ///< t<0 allows to set the prefix configurations; while 0 <= t < T allows to set all other initial configurations
-  void setStartConfigurations(const arr& q); ///< set all prefix configurations to a particular state
+  //-- setting individual time slices
+  void setConfiguration_qAll(int t, const arr& q); ///< t<0 allows to set the prefix configurations; while 0 <= t < T allows to set all other initial configurations
+  void setConfiguration_qOrg(int t, const arr& q); ///< set only those DOFs that were defined in the original world (excluding extra DOFs from switches)
+  void setConfiguration_X(int t, const arr& X); ///< t<0 allows to set the prefix configurations; while 0 <= t < T allows to set all other initial configurations
   void initWithConstant(const arr& q); ///< set all configurations EXCEPT the prefix to a particular state
   void initWithWaypoints(const arrA& waypoints, uint waypointStepsPerPhase=1, bool sineProfile=true); ///< set all configurations (EXCEPT prefix) to interpolate given waypoints
+  void updateAndShiftPrefix(const rai::Configuration& C){
+    //-- joint state
+    //set t=0 to new joint state:
+    setConfiguration_qAll(0, C.getJointState());
+    //shift the joint state within prefix (t=-1 becomes equal to t=0, which is new state)
+    for(int t=-k_order; t<0; t++) setConfiguration_qOrg(t, getConfiguration_qOrg(t+1));
+
+    //-- frame state of roots only, if objects moved:
+    uintA roots = framesToIndices(C.getRoots());
+    arr X0 = C.getFrameState(roots);
+    //set t=0..T to new frame state:
+    for(uint t=0; t<T; t++) pathConfig.setFrameState(X0, roots+timeSlices(k_order+t,0)->ID);
+    //shift the frame states within the prefix (t=-1 becomes equal to t=0, which is new state)
+    for(int t=-k_order; t<0; t++){
+      arr Xt = pathConfig.getFrameState(roots+timeSlices(k_order+t+1,0)->ID);
+      pathConfig.setFrameState(Xt, roots+timeSlices(k_order+t,0)->ID);
+    }
+  }
+
 
   //-- optimization
   void optimize(double addInitializationNoise=.01, const OptOptions options=NOOPT);  ///< run the solver (same as run_prepare(); run(); )
@@ -253,21 +268,18 @@ struct KOMO : NonCopyable {
 
   //advanced
   void run_prepare(double addInitializationNoise);   ///< ensure the configurations are setup, decision variable is initialized, and noise added (if >0)
-  void run(const OptOptions options=NOOPT);          ///< run the solver iterations (configurations and decision variable needs to be setup before)
-  void run_sub(const uintA& X, const uintA& Y);
+  void run(OptOptions options=NOOPT);          ///< run the solver iterations (configurations and decision variable needs to be setup before)
   void setSpline(uint splineT);      ///< optimize B-spline nodes instead of the path; splineT specifies the time steps per node
 
   //-- reading results
-  rai::Configuration& getConfiguration(double phase); ///< get any configuration by its phase time
-  rai::Configuration& getConfiguration_t(int t);      ///< get any configuration (also prefix configurations) by its index
-  arr getJointState(double phase){ return getConfiguration(phase).getJointState();}
-  arr getFrameState(double phase){ return getConfiguration(phase).getFrameState(); }
-  arr getPath_decisionVariable();              ///< get all DOFs of all configurations in a single flat vector (the decision variable of optimization)
-  arr getPath(const StringA& joints={});       ///< get joint path, optionally for selected joints
-  arr getPath(const uintA& joints);            ///< get joint path for selected joints
-  arr getPath_frames(const StringA& frame={}); ///< get frame path, optionally for selected frames
-  arr getPath_frames(const uintA& frames);     ///< get frame path for selected frames
-  arrA getPath_q();                            ///< get the DOFs (of potentially varying dimensionality) for each configuration
+  arr getConfiguration_qAll(int t);  ///< get all DOFs
+  arr getConfiguration_qOrg(int t);  ///< get only those DOFs that were defined in the original world (excluding extra DOFs from switches)
+  arr getConfiguration_X(int t);     ///< get frame path for selected frames
+
+  arrA getPath_qAll();                            ///< get the DOFs (of potentially varying dimensionality) for each configuration
+  arr getPath_qOrg();      ///< get joint path, optionally for selected joints
+  arr getPath_X();     ///< get frame path, optionally for selected frames
+
   arr getPath_tau();
   arr getPath_times();
   arr getPath_energies();
@@ -280,122 +292,83 @@ struct KOMO : NonCopyable {
   double getConstraintViolations();
   double getCosts();
   void reportProxies(ostream& os=std::cout, double belowMargin=.1); ///< report the proxies (collisions) for each time slice
-  rai::Graph getContacts(); ///< report the contacts
-  rai::Array<rai::Transformation> reportEffectiveJoints(ostream& os=std::cout);
 
   void checkGradients();          ///< checks all gradients numerically
 
+  int view(bool pause=false, const char* txt=nullptr);
+  int view_play(bool pause=false, double delay=.2, const char* saveVideoPath=nullptr);
+
   void plotTrajectory();
   void plotPhaseTrajectory();
-  bool displayTrajectory(double delay=1., bool watch=true, bool overlayPaths=true, const char* saveVideoPath=nullptr, const char* addText=nullptr); ///< display the trajectory; use "vid/z." as vid prefix
-  bool displayPath(bool watch=true, bool full=true); ///< display the trajectory; use "vid/z." as vid prefix
-  rai::Camera& displayCamera();   ///< access to the display camera to change the view
 
   //===========================================================================
   //
   // internal (kind of private)
   //
 
-  void selectJointsBySubtrees(const StringA& roots, const arr& times={}, bool notThose=false);
-  void setupConfigurations(const arr& q_init=NoArr, const StringA& q_initJoints=NoStringA);   ///< this creates the @configurations@, that is, copies the original world T times (after setTiming!) perhaps modified by KINEMATIC SWITCHES and FLAGS
-  void setupRepresentations();
+  void selectJointsBySubtrees(const StringA& roots, const arr& times= {}, bool notThose=false);
+  void setupConfigurations();
   void checkBounds(const arr& x);
-  void retrospectApplySwitches(rai::Array<rai::KinematicSwitch*>& _switches);
+  void retrospectApplySwitches();
   void retrospectChangeJointType(int startStep, int endStep, uint frameID, rai::JointType newJointType);
   void set_x(const arr& x, const uintA& selectedConfigurationsOnly=NoUintA);            ///< set the state trajectory of all configurations
-//  void setState(const arr& x, const uintA& selectedVariablesOnly=NoUintA);            ///< set the state trajectory of all configurations
-  uint dim_x(uint t) { return configurations(t+k_order)->getJointStateDimension(); }
 
-  struct Conv_KOMO_KOMOProblem : KOMO_Problem {
-    KOMO& komo;
-    uint dimPhi;
-    uintA phiIndex, phiDim;
-    StringA featureNames;
-    
-    Conv_KOMO_KOMOProblem(KOMO& _komo) : komo(_komo) {}
-    void clear(){ dimPhi=0; phiIndex.clear(); phiDim.clear(); featureNames.clear(); }
 
-    virtual uint get_k() { return komo.k_order; }
-    virtual void getStructure(uintA& variableDimensions, uintA& featureTimes, ObjectiveTypeA& featureTypes);
-    virtual void phi(arr& phi, arrA& J, arrA& H, uintA& featureTimes, ObjectiveTypeA& tt, const arr& x);
-  } komo_problem;
+  //===========================================================================
+  //
+  // MathematicalProgram transcriptions
+  //
 
-  struct Conv_KOMO_DenseProblem : ConstrainedProblem {
-    KOMO& komo;
-    uint dimPhi=0;
+  shared_ptr<MathematicalProgram> nlp_SparseNonFactored();
+  shared_ptr<MathematicalProgram_Factored> nlp_Factored();
 
-    arr quadraticPotentialLinear, quadraticPotentialHessian;
 
-    Conv_KOMO_DenseProblem(KOMO& _komo) : komo(_komo) {}
-    void clear(){ dimPhi=0; }
+  //===========================================================================
+  //
+  // deprecated
+  //
 
-    void getDimPhi();
+  bool displayTrajectory(double delay=1., bool watch=true, bool overlayPaths=true, const char* saveVideoPath=nullptr, const char* addText=nullptr){
+    DEPR; return view_play(watch, delay, saveVideoPath);  }
+  bool displayPath(const char* txt, bool watch=true, bool full=true){
+    DEPR; return view(watch, txt); }
+  rai::Camera& displayCamera();
 
-    virtual void phi(arr& phi, arr& J, arr& H, ObjectiveTypeA& tt, const arr& x);
-  } dense_problem;
-
-  struct Conv_KOMO_GraphProblem : GraphProblem {
-    KOMO& komo;
-    uint dimPhi=0;
-
-    Conv_KOMO_GraphProblem(KOMO& _komo) : komo(_komo) {}
-    void clear(){ dimPhi=0; }
-
-    virtual void getStructure(uintA& variableDimensions, intAA& featureVariables, ObjectiveTypeA& featureTypes);
-    virtual void phi(arr& phi, arrA& J, arrA& H, const arr& x);
-
-    virtual void setPartialX(const uintA& whichX, const arr& x);
-    virtual void getPartialPhi(arr& phi, arrA& J, arrA& H, const uintA& whichPhi);
-    virtual void getSemantics(StringA& varNames, StringA& phiNames);
-  } graph_problem;
-
-  struct TimeSliceProblem : ConstrainedProblem {
-    KOMO& komo;
-    int slice;
-    uint dimPhi=0;
-
-    TimeSliceProblem(KOMO& _komo, int _slice) : komo(_komo), slice(_slice) {}
-
-    void getDimPhi();
-    virtual void phi(arr& phi, arr& J, arr& H, ObjectiveTypeA& tt, const arr& x);
-  };
-
-  struct Conv_KOMO_MathematicalProgram : MathematicalProgram {
-    KOMO& komo;
-    uintA xIndex2VarId;
-    struct VariableIndexEntry{ rai::Joint *joint=0; rai::ForceExchange *force=0; uint dim; uint xIndex; };
-    rai::Array<VariableIndexEntry> variableIndex;
-
-    uint featuresDim;
-    struct FeatureIndexEntry{ ptr<Objective> ob; ConfigurationL Ctuple; uint t; uint dim; intA varIds; };
-    rai::Array<FeatureIndexEntry> featureIndex;
-
-    Conv_KOMO_MathematicalProgram(KOMO& _komo) : komo(_komo) {}
-
-  private:
-    void createIndices();
-
-  public:
-    ///-- signature/structure of the mathematical problem
-    virtual uint getDimension();
-    virtual void getBounds(arr& bounds_lo, arr& bounds_up);
-    virtual void getFeatureTypes(ObjectiveTypeA& featureTypes);
-    virtual bool isStructured();
-    virtual void getStructure(uintA& variableDimensions, //the size of each variable block
-                              uintA& featureDimensions,  //the size of each feature block
-                              intAA& featureVariables     //which variables the j-th feature block depends on
-                              );
-
-    ///--- evaluation
-
-    //unstructured (batch) interface (where J may/should be sparse! and H optional
-    virtual void evaluate(arr& phi, arr& J, arr& H, const arr& x); //default implementation: if isStructured, gets everything from there
-
-    //structured (local) interface
-    virtual void setSingleVariable(uint var_id, const arr& x); //set a single variable block
-    virtual void evaluateSingleFeature(uint feat_id, arr& phi, arr& J, arr& H); //get a single feature block
-
-    void reportFeatures();
-  };
+  void add_StableRelativePose(const std::vector<int>& confs, const char* gripper, const char* object) {
+    DEPR;
+    for(uint i=1; i<confs.size(); i++)
+      addObjective(ARR(confs[0], confs[i]), FS_poseRel, {gripper, object}, OT_eq);
+    world.makeObjectsFree({object});
+  }
+  void add_StablePose(const std::vector<int>& confs, const char* object) {
+    DEPR;
+    for(uint i=1; i<confs.size(); i++)
+      addObjective(ARR(confs[0], confs[i]), FS_pose, {object}, OT_eq);
+    world.makeObjectsFree({object});
+  }
+  void add_grasp(int conf, const char* gripper, const char* object) {
+    DEPR;
+    addObjective(ARR(conf), FS_distance, {gripper, object}, OT_eq);
+  }
+  void add_place(int conf, const char* object, const char* table) {
+    DEPR;
+    addObjective(ARR(conf), FS_aboveBox, {table, object}, OT_ineq);
+    addObjective(ARR(conf), FS_standingAbove, {table, object}, OT_eq);
+    addObjective(ARR(conf), FS_vectorZ, {object}, OT_sos, {}, {0., 0., 1.});
+  }
+  void add_resting(int conf1, int conf2, const char* object) {
+    DEPR;
+    addObjective(ARR(conf1, conf2), FS_pose, {object}, OT_eq);
+  }
+  void add_restingRelative(int conf1, int conf2, const char* object, const char* tableOrGripper) {
+    DEPR;
+    addObjective(ARR(conf1, conf2), FS_poseRel, {tableOrGripper, object}, OT_eq);
+  }
+  void activateCollisions(const char* s1, const char* s2){ DEPR; HALT("see komo-21-03-06"); }
+  void deactivateCollisions(const char* s1, const char* s2);
+  arr getFrameStateX(int t){ DEPR; return getConfiguration_X(t); }
+  arr getPath_qAll(int t){ DEPR; return getConfiguration_qOrg(t); }
+  arr getConfiguration_q(int t) { DEPR; return getConfiguration_qAll(t); }
+  arr getPath_qOrg(uintA joints, const bool activesOnly){ DEPR; return getPath_qOrg(); }
 };
 

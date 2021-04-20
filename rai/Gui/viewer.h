@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -47,7 +47,8 @@ struct PointCloudViewer : Thread {
   unique_ptr<struct sPointCloudViewer> self;
   Var<arr> pts;
   Var<byteA> rgb;
-  PointCloudViewer(const char* pts_name="kinect_points", const char* rgb_name="kinect_rgb");
+  Var<arr> normals;
+  PointCloudViewer();
   PointCloudViewer(const Var<arr>& _pts, const Var<byteA>& _rgb, double beatIntervalSec=-1.);
   ~PointCloudViewer();
   void open();

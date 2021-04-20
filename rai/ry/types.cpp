@@ -1,7 +1,23 @@
+/*  ------------------------------------------------------------------
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
+
+    This code is distributed under the MIT License.
+    Please see <root-path>/LICENSE for details.
+    --------------------------------------------------------------  */
+
 #ifdef RAI_PYBIND
 
 #include "types.h"
-#include "../Geo/geoms.h"
+#include "../Geo/mesh.h"
+
+template<> pybind11::array_t<double> arr2numpy(const rai::Array<double>& x){
+  //default!
+  if(!x.isSparse()) return pybind11::array_t<double>(x.dim(), x.p);
+  //sparse!
+  arr triplets = x.sparse().getTriplets();
+  return pybind11::array_t<double>(triplets.dim(), triplets.p);
+}
 
 pybind11::dict graph2dict(const rai::Graph& G) {
   pybind11::dict dict;
@@ -16,15 +32,15 @@ pybind11::dict graph2dict(const rai::Graph& G) {
     } else if(n->isOfType<rai::String>()) {
       dict[key.p] = n->get<rai::String>().p;
     } else if(n->isOfType<arr>()) {
-      dict[key.p] = conv_arr2stdvec(n->get<arr>());
+      dict[key.p] = n->get<arr>().vec();
     } else if(n->isOfType<arrA>()) {
-        dict[key.p] = conv_arr2stdvec(n->get<arrA>());
+      dict[key.p] = n->get<arrA>().vec();
     } else if(n->isOfType<intA>()) {
-      dict[key.p] = conv_arr2stdvec(n->get<intA>());
+      dict[key.p] = n->get<intA>().vec();
     } else if(n->isOfType<uintA>()) {
-      dict[key.p] = conv_arr2stdvec(n->get<uintA>());
+      dict[key.p] = n->get<uintA>().vec();
     } else if(n->isOfType<boolA>()) {
-      dict[key.p] = conv_arr2stdvec(n->get<boolA>());
+      dict[key.p] = n->get<boolA>().vec();
     } else if(n->isOfType<double>()) {
       dict[key.p] = n->get<double>();
     } else if(n->isOfType<int>()) {
@@ -51,7 +67,7 @@ pybind11::list graph2list(const rai::Graph& G) {
     } else if(n->isOfType<rai::String>()) {
       list.append(n->get<rai::String>().p);
     } else if(n->isOfType<arr>()) {
-      list.append(conv_arr2stdvec(n->get<arr>()));
+      list.append(n->get<arr>().vec());
     } else if(n->isOfType<double>()) {
       list.append(n->get<double>());
     } else if(n->isOfType<int>()) {
@@ -62,7 +78,6 @@ pybind11::list graph2list(const rai::Graph& G) {
       list.append(n->get<bool>());
     } else {
     }
-
   }
   return list;
 }
@@ -113,12 +128,11 @@ byteA numpy2arr(const pybind11::array_t<byte>& X) {
   return Y;
 }
 
-arr vecvec2arr(const std::vector<std::vector<double> >& X) {
+arr vecvec2arr(const std::vector<std::vector<double>>& X) {
   CHECK(X.size()>0, "");
   arr Y(X.size(), X[0].size());
   for(uint i=0; i<Y.d0; i++) for(uint j=0; j<Y.d1; j++) Y(i, j) = X[i][j];
   return Y;
 }
-
 
 #endif

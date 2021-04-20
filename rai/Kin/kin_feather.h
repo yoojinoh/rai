@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -39,13 +39,13 @@ stdOutPipe(F_Link)
 typedef rai::Array<F_Link> F_LinkTree;
 
 struct FeatherstoneInterface {
-  rai::Configuration& K;
+  rai::Configuration& C;
 
   FrameL sortedFrames;
 
   rai::Array<F_Link> tree;
 
-  FeatherstoneInterface(rai::Configuration& K):K(K) { sortedFrames = K.calc_topSort(); }
+  FeatherstoneInterface(rai::Configuration& C):C(C) { sortedFrames = C.calc_topSort(); }
 
   void setGravity(double g=-9.81);
   void update();

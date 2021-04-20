@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -14,7 +14,7 @@
 struct GamepadControlThread : Thread {
   struct Gamepad2Tasks* g2t;
   VAR(arr, gamepadState)
-  VAR(CtrlTaskL, ctrlTasks)
+  VAR(CtrlObjectiveL, ctrlTasks)
   VAR(rai::Configuration, modelWorld)
 
   struct GamepadInterface* gamepadPoller;

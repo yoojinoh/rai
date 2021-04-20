@@ -1,27 +1,36 @@
+/*  ------------------------------------------------------------------
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
+
+    This code is distributed under the MIT License.
+    Please see <root-path>/LICENSE for details.
+    --------------------------------------------------------------  */
+
 #include "viewer.h"
 #include "frame.h"
 #include "../Gui/opengl.h"
 #include <iomanip>
 
-rai::ConfigurationViewer::~ConfigurationViewer(){
+rai::ConfigurationViewer::~ConfigurationViewer() {
   if(gl) gl.reset();
 }
 
-void rai::ConfigurationViewer::ensure_gl() {
+OpenGL& rai::ConfigurationViewer::ensure_gl() {
   if(!gl) {
     gl = make_shared<OpenGL>("ConfigurationViewer");
     gl->camera.setDefault();
     gl->add(*this);
   }
+  return *gl;
 }
 
-int rai::ConfigurationViewer::update(const char* text, bool nonThreaded){ ensure_gl(); return gl->update(text, nonThreaded); }
+int rai::ConfigurationViewer::update(const char* text, bool nonThreaded) { ensure_gl(); return gl->update(text, nonThreaded); }
 
-int rai::ConfigurationViewer::watch(const char* text){ ensure_gl(); return gl->watch(text); }
+int rai::ConfigurationViewer::watch(const char* text) { ensure_gl(); return gl->watch(text); }
 
 void rai::ConfigurationViewer::add(GLDrawer& c) { ensure_gl(); gl->add(c); }
 
-void rai::ConfigurationViewer::resetPressedKey(){ ensure_gl(); gl->pressedkey=0; }
+void rai::ConfigurationViewer::resetPressedKey() { ensure_gl(); gl->pressedkey=0; }
 
 int rai::ConfigurationViewer::update(bool watch) {
   ensure_gl();
@@ -37,30 +46,39 @@ int rai::ConfigurationViewer::update(bool watch) {
     gl->text = drawText();
   }
 
-  gl->update(nullptr, false);
-  return gl->pressedkey;
+  return gl->update(nullptr, false);
 }
 
-int rai::ConfigurationViewer::setConfiguration(rai::Configuration& _C, const char* text, bool watch){
+void rai::ConfigurationViewer::raiseWindow(){
   ensure_gl();
-  if(_C.frames.N!=C.frames.N){
-    recopyMeshes(_C);
-  }else if(_C.proxies.N){
+  gl->raiseWindow();
+}
+
+int rai::ConfigurationViewer::setConfiguration(const rai::Configuration& _C, const char* text, bool watch) {
+  ensure_gl();
+  bool copyMeshes = false;
+  if(_C.frames.N!=C.frames.N) copyMeshes = true;
+  else{
+    for(uint i=0;i<C.frames.N;i++){
+      if((!_C.frames.elem(i)->shape) != (!C.frames.elem(i)->shape)){
+        copyMeshes=true;
+        break;
+      }
+    }
+  }
+  if(copyMeshes) recopyMeshes(_C);
+
+  if(_C.proxies.N) {
     auto _dataLock = gl->dataLock(RAI_HERE);
     C.copyProxies(_C.proxies);
   }
 
   {
     auto _dataLock = gl->dataLock(RAI_HERE);
-#if 0
-    framePath.resize(_C.frames.N, 7);
-    for(uint i=0;i<_C.frames.N;i++) framePath[i] = _C.frames(i)->getPose();
-    framePath.reshape(1, _C.frames.N, 7);
-#else
     framePath = _C.getFrameState();
     framePath.reshape(1, _C.frames.N, 7);
-#endif
     drawTimeSlice=0;
+    drawSubFrames.clear();
     if(text) drawText = text;
   }
 
@@ -83,7 +101,8 @@ int rai::ConfigurationViewer::setPath(ConfigurationL& Cs, const char* text, bool
   return setPath(X, text, watch);
 }
 
-int rai::ConfigurationViewer::setPath(rai::Configuration& _C, const arr& jointPath, const char* text, bool watch, bool full){
+int rai::ConfigurationViewer::setPath(rai::Configuration& _C, const arr& jointPath, const char* text, bool watch, bool full) {
+  setConfiguration(_C, 0, false);
   CHECK(C.frames.N, "setPath requires that you setConfiguration first");
 
   arr X(jointPath.d0, _C.frames.N, 7);
@@ -115,6 +134,51 @@ int rai::ConfigurationViewer::setPath(const arr& _framePath, const char* text, b
   return update(watch);
 }
 
+bool rai::ConfigurationViewer::playVideo(uint T, uint nFrames, bool watch, double delay, const char* saveVideoPath){
+  if(rai::getDisableGui()) return false;
+
+  const rai::String tag = drawText;
+
+  if(saveVideoPath) {
+    rai::system(STRING("mkdir -p " <<saveVideoPath));
+    rai::system(STRING("rm -f " <<saveVideoPath <<"*.ppm"));
+  }
+
+  CHECK_GE(C.frames.N, T*nFrames, "");
+
+  FrameL F = C.frames({0,T*nFrames-1});
+  F.reshape(T, nFrames);
+
+  for(uint t=0; t<F.d0; t++) {
+    {
+      auto _dataLock = gl->dataLock(RAI_HERE);
+      drawSubFrames = F[t];
+      drawText.clear() <<tag <<" (config:" <<t <<'/' <<F.d0 <<")";
+    }
+
+    if(delay<0.) {
+      update(true);
+    } else {
+      update(false);
+      if(delay) rai::wait(delay / F.d0);
+    }
+
+    {
+      auto _dataLock = gl->dataLock(RAI_HERE);
+      if(saveVideoPath) write_ppm(gl->captureImage, STRING(saveVideoPath<<std::setw(4)<<std::setfill('0')<<t<<".ppm"));
+    }
+  }
+  drawText = tag;
+  if(watch && rai::getInteractivity()) {
+    int key = update(true);
+    drawSubFrames.clear();
+    return !(key==27 || key=='q');
+  }
+  drawSubFrames.clear();
+  return false;
+
+}
+
 bool rai::ConfigurationViewer::playVideo(bool watch, double delay, const char* saveVideoPath) {
 #ifndef RAI_GL
   return false;
@@ -126,7 +190,7 @@ bool rai::ConfigurationViewer::playVideo(bool watch, double delay, const char* s
     rai::system(STRING("rm -f " <<saveVideoPath <<"*.ppm"));
   }
 
-  for(uint t=0;t<framePath.d0;t++) {
+  for(uint t=0; t<framePath.d0; t++) {
     {
       auto _dataLock = gl->dataLock(RAI_HERE);
       drawTimeSlice=t;
@@ -146,14 +210,14 @@ bool rai::ConfigurationViewer::playVideo(bool watch, double delay, const char* s
     }
   }
   drawText = tag;
-  if(watch) {
+  if(watch && rai::getInteractivity()) {
     int key = update(true);
     return !(key==27 || key=='q');
   }
   return false;
 }
 
-void rai::ConfigurationViewer::savePng(const char* saveVideoPath){
+void rai::ConfigurationViewer::savePng(const char* saveVideoPath) {
   write_ppm(gl->captureImage, STRING(saveVideoPath<<std::setw(4)<<std::setfill('0')<<(pngCount++)<<".ppm"));
 }
 
@@ -162,22 +226,22 @@ rai::Camera& rai::ConfigurationViewer::displayCamera() {
   return gl->camera;
 }
 
-byteA rai::ConfigurationViewer::getScreenshot(){
+byteA rai::ConfigurationViewer::getScreenshot() {
   ensure_gl();
   return gl->captureImage;
 }
 
-void rai::ConfigurationViewer::recopyMeshes(rai::Configuration& _C){
+void rai::ConfigurationViewer::recopyMeshes(const rai::Configuration& _C) {
   ensure_gl();
 
   {
     auto _dataLock = gl->dataLock(RAI_HERE);
     C.copy(_C, false);
     //deep copy meshes!
-    for(rai::Frame* f:C.frames) if(f->shape) {
-      ptr<Mesh> org = f->shape->_mesh;
-      f->shape->_mesh = make_shared<Mesh> (*org.get());
-    }
+//    for(rai::Frame* f:C.frames) if(f->shape) {
+//        ptr<Mesh> org = f->shape->_mesh;
+//        f->shape->_mesh = make_shared<Mesh> (*org.get());
+//      }
   }
 }
 
@@ -185,7 +249,7 @@ void rai::ConfigurationViewer::glDraw(OpenGL& gl) {
 #ifdef RAI_GL
   glStandardScene(NULL, gl);
 
-  if(!framePath.N){
+  if(!framePath.N) {
     gl.text <<"\nConfigurationViewer: NOTHING TO DRAW";
     return;
   }
@@ -195,8 +259,8 @@ void rai::ConfigurationViewer::glDraw(OpenGL& gl) {
   rai::Transformation T;
 
   //draw frame paths
-  if(drawFrameLines){
-    glColor(0., 0., 0.,.2);
+  if(drawFrameLines) {
+    glColor(0., 0., 0., .2);
     glLoadIdentity();
     for(uint i=0; i<framePath.d1; i++) {
       glBegin(GL_LINE_STRIP);
@@ -209,27 +273,30 @@ void rai::ConfigurationViewer::glDraw(OpenGL& gl) {
     }
   }
 
-  if(drawTimeSlice>=0){
+  if(drawSubFrames.N){
+//    C.setFrameState(framePath[t]);
+    C.glDraw_sub(gl, drawSubFrames, 0);
+  } else if(drawTimeSlice>=0) {
     uint t=drawTimeSlice;
     CHECK_LE(t+1, framePath.d0, "");
     CHECK_EQ(framePath.d1, C.frames.N, "");
     CHECK_EQ(framePath.d2, 7, "");
 
     C.setFrameState(framePath[t]);
-    C.glDraw_sub(gl, 0);
-  }else{
-    if(drawFullPath){
+    C.glDraw_sub(gl, C.frames, 0);
+  } else {
+    if(drawFullPath) {
       CHECK_EQ(framePath.d1, C.frames.N, "");
       CHECK_EQ(framePath.d2, 7, "");
-      for(uint t=0;t<framePath.d0;t++){
+      for(uint t=0; t<framePath.d0; t++) {
         C.setFrameState(framePath[t]);
-        C.glDraw_sub(gl, 1); //opaque
+        C.glDraw_sub(gl, C.frames, 1); //opaque
       }
-      for(uint t=0;t<framePath.d0;t++){
+      for(uint t=0; t<framePath.d0; t++) {
         C.setFrameState(framePath[t]);
-        C.glDraw_sub(gl, 2); //transparent
+        C.glDraw_sub(gl, C.frames, 2); //transparent
       }
-    }else{
+    } else {
       NIY;
     }
   }

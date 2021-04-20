@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -37,7 +37,7 @@ void runMonteCarlo(Graph& G) {
       for(Node* rule:rules) {
         //      cout <<"*** RULE: " <<*rule <<endl;
         //      cout <<  "Substitutions:" <<endl;
-        NodeL subs = getRuleSubstitutions2(state, rule, (verbose-3));
+        NodeL subs = getRuleSubstitutions2(state, rule->graph(), (verbose-3));
         for(uint s=0; s<subs.d0; s++) {
           decisions.append(std::pair<Node*, NodeL>(rule, subs[s]));
         }

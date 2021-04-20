@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -141,7 +141,7 @@ void TM_Default::phi(arr& y, arr& J, const rai::Configuration& G) {
         J(0, -i) = 1.;
       }
     } break;
-    case TMT_qLimits:   if(!params.N) params=G.getLimits();  G.kinematicsLimitsCost(y, J, params);  break;
+    case TMT_qLimits:   if(!params.N) params=G.getLimits();  G.kinematicsLimits(y, J, params);  break;
     case TMT_com:       G.getCenterOfMass(y);     y.resizeCopy(2); if(!!J) { G.getComGradient(J);  J.resizeCopy(2, J.d1); }  break;
     case TMT_coll:      G.kinematicsProxyCost(y, J, params(0));  break;
     case TMT_colCon:    G.kinematicsContactConstraints(y, J);  break;

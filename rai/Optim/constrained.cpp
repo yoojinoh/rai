@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -16,7 +16,8 @@
 void PhaseOneProblem::initialize(arr& x) {
   arr phi;
   ObjectiveTypeA ot;
-  f_orig.phi(phi, NoArr, NoArr, ot, x);
+  f_orig.getFeatureTypes(ot);
+  f_orig.evaluate(phi, NoArr, x);
   dim_x=x.N;
   dim_eq=dim_ineq=0;
   double gmax=0.;
@@ -32,45 +33,31 @@ void PhaseOneProblem::initialize(arr& x) {
   x.append(gmax);
 }
 
-void PhaseOneProblem::phi(arr& meta_phi, arr& meta_J, arr& meta_H, ObjectiveTypeA& meta_ot, const arr& meta_x) {
+void PhaseOneProblem::getFeatureTypes(ObjectiveTypeA& meta_ot) {
+  f_orig.getFeatureTypes(ft);
+  meta_ot = ft;
+  meta_ot.append(OT_ineq);
+}
+
+void PhaseOneProblem::evaluate(arr& meta_phi, arr& meta_J, const arr& meta_x) {
   CHECK_EQ(meta_x.N, dim_x+1, "");
   arr x = meta_x({0, -2});
   double s = meta_x(-1);
 
   arr phi, J;
-  ObjectiveTypeA ot;
-  f_orig.phi(phi, J, NoArr, ot, x);
+  f_orig.evaluate(phi, J, x);
 
-  meta_phi.resize(1+dim_ineq+dim_eq);
-  meta_ot.resize(1+dim_ineq+dim_eq);
+  meta_phi = phi;
+  meta_phi.append(-s);
 
-  uint m=0;
-  for(uint i=0; i<phi.N; i++) if(ot.elem(i)==OT_ineq) {
-      meta_phi(m) = phi(i) - s; //subtract slack!
-      meta_ot(m) = OT_ineq;
-      m++;
+  for(uint i=0; i<phi.N; i++) if(ft.elem(i)==OT_ineq) {
+      meta_phi(i) = phi(i) - s; //subtract slack!
     }
-  for(uint i=0; i<phi.N; i++) if(ot.elem(i)==OT_eq) {
-      meta_phi(m) = phi(i);
-      meta_ot(m) = OT_eq;
-      m++;
-    }
-  CHECK_EQ(m, dim_ineq+dim_eq, "");
-  meta_phi(m) = s;
 
   if(!!meta_J) {
-    meta_J.resize(meta_phi.N, meta_x.N).setZero();
-    m=0;
-    for(uint i=0; i<phi.N; i++) if(ot.elem(i)==OT_ineq) {
-        meta_J[m] = J[i];
-        m++;
-      }
-    for(uint i=0; i<phi.N; i++) if(ot.elem(i)==OT_eq) {
-        meta_J[m] = J[i];
-        m++;
-      }
-    meta_J(-1, -1) = 1.;
-    CHECK_EQ(m, dim_ineq+dim_eq, "");
+    meta_J = J;
+    meta_J.append(zeros(meta_J.d1));
+    meta_J(-1, -1) = -1.;
   }
 }
 
@@ -83,11 +70,12 @@ const char* MethodName[]= { "NoMethod", "SquaredPenalty", "AugmentedLagrangian",
 
 //==============================================================================
 
-OptConstrained::OptConstrained(arr& _x, arr& _dual, ConstrainedProblem& P, int verbose, OptOptions _opt, std::ostream* _logFile)
+OptConstrained::OptConstrained(arr& _x, arr& _dual, MathematicalProgram& P, OptOptions _opt, std::ostream* _logFile)
   : L(P, _opt, _dual), newton(_x, L, _opt, _logFile), dual(_dual), opt(_opt), logFile(_logFile) {
 
-  if(verbose>=0) opt.verbose=verbose;
-  newton.o.verbose = rai::MAX(opt.verbose-1, 0);
+//  P.getBounds(newton.bound_lo, newton.bound_up);
+
+  newton.options.verbose = rai::MAX(opt.verbose-1, 0);
 
   if(opt.verbose>0) cout <<"***** optConstrained: method=" <<MethodName[opt.constrainedMethod] <<endl;
 
@@ -124,11 +112,20 @@ bool OptConstrained::step() {
   if(newtonOnce || opt.constrainedMethod==squaredPenaltyFixed) {
     newtonStop = newton.run();
   } else {
-    double stopTol = newton.o.stopTolerance;
-    if(earlyPhase) newton.o.stopTolerance *= 10.;
+    double org_stopTol = newton.options.stopTolerance;
+    double org_stopGTol = newton.options.stopGTolerance;
+    if(!its){
+      newton.options.stopTolerance *= 3.;
+      newton.options.stopGTolerance *= 3.;
+    }
+    if(earlyPhase){
+      newton.options.stopTolerance *= 10.;
+      newton.options.stopGTolerance *= 10.;
+    }
     if(opt.constrainedMethod==anyTimeAula)  newtonStop = newton.run(20);
     else                                    newtonStop = newton.run();
-    newton.o.stopTolerance = stopTol;
+    newton.options.stopTolerance = org_stopTol;
+    newton.options.stopGTolerance = org_stopGTol;
   }
 
   if(L.lambda.N) CHECK_EQ(L.lambda.N, L.phi_x.N, "the evaluation (within newton) changed the phi-dimensionality");
@@ -197,15 +194,7 @@ bool OptConstrained::step() {
   double L_x_before = newton.fx;
 
   //upate Lagrange parameters
-  switch(opt.constrainedMethod) {
-//  case squaredPenalty: UCP.mu *= opt.aulaMuInc;  break;
-    case squaredPenalty: L.aulaUpdate(false, -1., opt.aulaMuInc, &newton.fx, newton.gx, newton.Hx);  break;
-    case augmentedLag:   L.aulaUpdate(false, 1., opt.aulaMuInc, &newton.fx, newton.gx, newton.Hx);  break;
-    case anyTimeAula:    L.aulaUpdate(true,  1., opt.aulaMuInc, &newton.fx, newton.gx, newton.Hx);  break;
-    case logBarrier:     L.muLB /= 2.;  break;
-    case squaredPenaltyFixed: HALT("you should not be here"); break;
-    case noMethod: HALT("need to set method before");  break;
-  }
+  L.autoUpdate(opt, &newton.fx, newton.gx, newton.Hx);
 
   if(!!dual) dual=L.lambda;
 

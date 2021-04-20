@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -27,27 +27,23 @@ struct OptConstrained {
   bool earlyPhase=false;
   ostream* logFile=nullptr;
 
-  OptConstrained(arr& x, arr& dual, ConstrainedProblem& P, int verbose=-1, OptOptions opt=NOOPT, ostream* _logFile=0);
+  OptConstrained(arr& x, arr& dual, MathematicalProgram& P, OptOptions opt=NOOPT, ostream* _logFile=0);
   ~OptConstrained();
   bool step();
   uint run();
 //  void reinit();
 };
 
-//TODO: remove:
-inline uint optConstrained(arr& x, arr& dual, ConstrainedProblem& P, int verbose=-1, OptOptions opt=NOOPT) {
-  return OptConstrained(x, dual, P, verbose, opt).run();
-}
-
 //==============================================================================
 //
 // evaluating
 //
 
-inline void evaluateConstrainedProblem(const arr& x, ConstrainedProblem& P, std::ostream& os) {
+inline void evaluateMathematicalProgram(const arr& x, MathematicalProgram& P, std::ostream& os) {
   arr phi_x;
   ObjectiveTypeA tt_x;
-  P.phi(phi_x, NoArr, NoArr, tt_x, x);
+  P.getFeatureTypes(tt_x);
+  P.evaluate(phi_x, NoArr, x);
   double Ef=0., Eh=0., Eg=0.;
   for(uint i=0; i<phi_x.N; i++) {
     if(tt_x(i)==OT_f) Ef += phi_x(i);
@@ -66,12 +62,14 @@ inline void evaluateConstrainedProblem(const arr& x, ConstrainedProblem& P, std:
 // to the phase one problem of another constraint problem
 //
 
-struct PhaseOneProblem : ConstrainedProblem {
-  ConstrainedProblem& f_orig;
+struct PhaseOneProblem : MathematicalProgram {
+  MathematicalProgram& f_orig;
+  ObjectiveTypeA ft;
   uint dim_x, dim_ineq, dim_eq;
 
-  PhaseOneProblem(ConstrainedProblem& f_orig):f_orig(f_orig) {}
+  PhaseOneProblem(MathematicalProgram& f_orig):f_orig(f_orig) {}
   void initialize(arr& x);
-  void phi(arr& phi, arr& J, arr& H, ObjectiveTypeA& meta_ot, const arr& x);
+  virtual void getFeatureTypes(ObjectiveTypeA& featureTypes);
+  virtual void evaluate(arr& phi, arr& J, const arr& x);
 };
 

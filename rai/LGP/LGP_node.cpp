@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -15,6 +15,7 @@
 #include "../Kin/switch.h"
 #include "../Optim/GraphOptim.h"
 #include "../Gui/opengl.h"
+#include "../Kin/viewer.h"
 
 #define DEBUG(x) //x
 #define DEL_INFEASIBLE(x) //x
@@ -100,23 +101,6 @@ void LGP_Node::expand(int verbose) {
   isExpanded=true;
 }
 
-void LGP_Node::computeEndKinematics() {
-  Skeleton S = getSkeleton();
-
-  effKinematics.copy(startKinematics, true);
-  KOMO tmp;
-  tmp.setModel(startKinematics, false);
-  double maxPhase=0;
-  for(const SkeletonEntry& s:S) {
-    if(s.phase0>maxPhase) maxPhase=s.phase0;
-    if(s.phase1>maxPhase) maxPhase=s.phase1;
-  }
-  tmp.setTiming(maxPhase+1., 1, 10., 1);
-  tmp.setSkeleton(S);
-//  tmp.reportProblem();
-  for(rai::KinematicSwitch* s : tmp.switches) s->apply(effKinematics);
-}
-
 void LGP_Node::optBound(BoundType bound, bool collisions, int verbose) {
   if(komoProblem(bound)) komoProblem(bound).reset();
   komoProblem(bound) = make_shared<KOMO>();
@@ -132,39 +116,31 @@ void LGP_Node::optBound(BoundType bound, bool collisions, int verbose) {
 
   Skeleton S = getSkeleton();
 
-  if(komo->logFile) writeSkeleton(*komo->logFile, S, getSwitchesFromSkeleton(S));
-
-  if(komo->verbose>1) {
-    writeSkeleton(cout, S, getSwitchesFromSkeleton(S));
-  }
-
-  //ensure the effective kinematics are computed when BD_pose
-//  if(bound==BD_pose && step>1){
-//    if(!parent->effKinematics.q.N) parent->optBound(BD_pose, collisions);
-//    CHECK(parent->effKinematics.q.N, "I can't compute a pose when no pose was comp. for parent (I need the effKin)");
-//  }
-  if(bound==BD_pose && parent) {
-    if(!parent->effKinematics.q.N) parent->computeEndKinematics();
-  }
   arrA waypoints;
   if(bound==BD_seqPath || bound==BD_seqVelPath) {
     CHECK(komoProblem(BD_seq), "BD_seq needs to be computed before");
-    waypoints = komoProblem(BD_seq)->getPath_q();
+    waypoints = komoProblem(BD_seq)->getPath_qAll();
   }
 
   auto comp = skeleton2Bound(komo, bound, S,
-                             startKinematics, (parent?parent->effKinematics:startKinematics),
+                             startKinematics,
                              collisions,
                              waypoints);
 
   CHECK(comp, "no compute object returned");
 
+  if(komo->logFile) writeSkeleton(*komo->logFile, S, getSwitchesFromSkeleton(S, komo->world));
+
+  if(komo->verbose>1) {
+    writeSkeleton(cout, S, getSwitchesFromSkeleton(S, komo->world));
+  }
+
   computes.append(comp);
 
   for(ptr<Objective>& o:tree->finalGeometryObjectives.objectives) {
     cout <<"FINAL objective: " <<*o <<endl;
-    ptr<Objective> co = komo->addObjective({0.}, o->feat, o->type);
-    co->setCostSpecs(komo->T-1, komo->T-1, komo->sparseOptimization);
+    ptr<Objective> co = komo->addObjective({0.}, o->feat, {}, o->type);
+    co->setCostSpecs(komo->T-1, komo->T-1);
     cout <<"FINAL objective: " <<*co <<endl;
   }
 
@@ -186,17 +162,17 @@ void LGP_Node::optBound(BoundType bound, bool collisions, int verbose) {
       komo->run();
     } else {
       CHECK_EQ(step, komo->T-1, "");
-      komo->run_sub({komo->T-2}, {});
+      NIY//komo->run_sub({komo->T-2}, {});
     }
   } catch(std::runtime_error& err) {
     cout <<"KOMO CRASHED: " <<err.what() <<endl;
     komoProblem(bound).reset();
     return;
   }
-  if(!komo->denseOptimization && !komo->sparseOptimization) COUNT_evals += komo->opt->newton.evals;
+//  COUNT_evals += komo->opt->newton.evals;
   COUNT_kin += rai::Configuration::setJointStateCount;
   COUNT_opt(bound)++;
-  COUNT_time += komo->runTime;
+  COUNT_time += komo->timeTotal;
   count(bound)++;
 
   DEBUG(komo->getReport(false, 1, FILE("z.problem")););
@@ -223,17 +199,6 @@ void LGP_Node::optBound(BoundType bound, bool collisions, int verbose) {
   if(bound==BD_pose) {
     cost_here -= 0.1*ret.reward; //account for the symbolic costs
     if(parent) cost_here += parent->cost(bound); //this is sequentially additive cost
-
-    effKinematics.copy(*komo->configurations.last(), true);
-
-    for(rai::KinematicSwitch* sw: komo->switches) {
-      //    CHECK_EQ(sw->timeOfApplication, 1, "need to do this before the optimization..");
-      if(sw->timeOfApplication>=2) sw->apply(effKinematics);
-    }
-
-    effKinematics.reset_q();
-    effKinematics.ensure_q();
-    DEBUG(effKinematics.checkConsistency();)
   } else {
     cost_here += cost(BD_symbolic); //account for the symbolic costs
   }
@@ -249,77 +214,13 @@ void LGP_Node::optBound(BoundType bound, bool collisions, int verbose) {
     constraints(bound) = constraints_here;
     feasible(bound) = feas;
     opt(bound) = komo->x;
-    computeTime(bound) = komo->runTime;
+    computeTime(bound) = komo->timeTotal;
   }
 
   if(!feasible(bound))
     labelInfeasible();
 }
 
-ptr<KOMO> LGP_Node::optSubCG(const SubCG& scg, bool collisions, int verbose) {
-  ptr<KOMO> komo = make_shared<KOMO>();
-
-  komo->verbose = rai::MAX(verbose, 0);
-
-  if(komo->verbose>0) {
-    cout <<"########## OPTIM SubCG: " <<scg <<endl;
-  }
-
-//  komo->fil = new ofstream(OptLGPDataPath + STRING("komo-" <<id <<'-' <<step <<'-' <<bound));
-
-  CG2komo(*komo, scg, startKinematics, collisions);
-  return komo;
-
-  if(komo->logFile) {
-    komo->reportProblem(*komo->logFile);
-    (*komo->logFile) <<komo->getProblemGraph(false);
-  }
-
-//  if(level==BD_seq) komo->denseOptimization=true;
-
-  //-- optimize
-  DEBUG(FILE("z.fol") <<fol;);
-  DEBUG(komo->getReport(false, 1, FILE("z.problem")););
-  if(komo->verbose>1) komo->reportProblem();
-  if(komo->verbose>5) komo->animateOptimization = komo->verbose-5;
-
-  try {
-    komo->run();
-  } catch(std::runtime_error& err) {
-    cout <<"KOMO CRASHED: " <<err.what() <<endl;
-    komo->reset();
-    return komo;
-  }
-  if(!komo->denseOptimization) COUNT_evals += komo->opt->newton.evals;
-  COUNT_kin += rai::Configuration::setJointStateCount;
-  COUNT_time += komo->runTime;
-
-  DEBUG(komo->getReport(false, 1, FILE("z.problem")););
-//  cout <<komo->getReport(true) <<endl;
-//  komo->reportProxies(cout, 0.);
-//  komo->checkGradients();
-
-  Graph result = komo->getReport(komo->verbose>0);
-  DEBUG(FILE("z.problem.cost") <<result;);
-
-  //double cost_here = result.get<double>({"total","sqrCosts"});
-  //double constraints_here = result.get<double>({"total","constraints"});
-  //bool feas = (constraints_here<1.);
-
-  return komo;
-}
-
-ptr<CG> LGP_Node::getCGO(bool collisions, int verbose) {
-  Skeleton S = getSkeleton();
-
-  if(verbose>1) {
-    writeSkeleton(cout, S, getSwitchesFromSkeleton(S));
-  }
-
-  return skeleton2CGO(S,
-                      startKinematics,
-                      collisions);
-}
 
 void LGP_Node::setInfeasible() {
   isInfeasible = true;
@@ -390,6 +291,8 @@ rai::String LGP_Node::getTreePathString(char sep) const {
   return str;
 }
 
+extern rai::Array<SkeletonSymbol> skeletonModes;
+
 Skeleton LGP_Node::getSkeleton(bool finalStateOnly) const {
   rai::Array<Graph*> states;
   arr times;
@@ -445,6 +348,18 @@ Skeleton LGP_Node::getSkeleton(bool finalStateOnly) const {
       }
     }
   }
+
+  for(uint i=0; i<skeleton.N; i++) {
+    SkeletonEntry& se =  skeleton.elem(i);
+    if(skeletonModes.contains(se.symbol)){ //S(i) is about a switch
+      if(se.phase1<times.last()){
+        se.phase1 += 1.; //*** MODES EXTEND TO THE /NEXT/ TIME SLICE ***
+      }else{
+        se.phase1 = -1.;
+      }
+    }
+  }
+
 
   return skeleton;
 }
@@ -604,19 +519,27 @@ void LGP_Node::getGraph(Graph& G, Node* n, bool brief) {
 }
 
 void LGP_Node::displayBound(ptr<OpenGL>& gl, BoundType bound) {
+  rai::ConfigurationViewer V;
+//  V.gl = gl;
+
   if(!komoProblem(bound)) {
     LOG(-1) <<"bound was not computed - cannot display";
   } else {
-    CHECK(!komoProblem(bound)->gl, "");
+//    CHECK(!komoProblem(bound)->gl, "");
     rai::Enum<BoundType> _bound(bound);
-    gl->title.clear() <<"BOUND " <<_bound <<" at step " <<step;
-    gl->setTitle();
-    komoProblem(bound)->gl = gl;
-    if(bound>=BD_path && bound<=BD_seqVelPath)
-      while(komoProblem(bound)->displayTrajectory(.1, true, false));
-    else
-      while(komoProblem(bound)->displayTrajectory(-1., true, false));
-    komoProblem(bound)->gl.reset();
+    rai::String s;
+    s <<"BOUND " <<_bound <<" at step " <<step;
+//    komoProblem(bound)->gl = gl;
+    V.setConfiguration(komoProblem(bound)->world, s);
+    V.setPath(komoProblem(bound)->getPath_X(), s, true);
+    if(bound>=BD_path && bound<=BD_seqVelPath){
+//      while(komoProblem(bound)->displayTrajectory(.1, true, false));
+      while(V.playVideo(true, 1.*komoProblem(bound)->T/komoProblem(bound)->stepsPerPhase));
+    }else{
+//      while(komoProblem(bound)->displayTrajectory(-1., true, false));
+      while(V.playVideo(true, 1.*komoProblem(bound)->T));
+    }
+//    komoProblem(bound)->gl.reset();
   }
 }
 

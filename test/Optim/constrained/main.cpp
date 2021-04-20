@@ -5,20 +5,21 @@
 #include <Optim/convert.h>
 
 //lecture.cpp:
-void testConstraint(ConstrainedProblem& p, uint dim_x, arr& x_start=NoArr, uint iters=20);
+void testConstraint(MathematicalProgram& p, uint dim_x, arr& x_start=NoArr, uint iters=20);
 
 //==============================================================================
 //
 // test standard constrained optimizers
 //
 
-void testConstraint2(ConstrainedProblem& p, uint dim_x, arr& x_start=NoArr){
+void testConstraint2(MathematicalProgram& p, uint dim_x, arr& x_start=NoArr){
   //-- initial x
   arr x = zeros(dim_x);
   if(!!x_start) x=x_start;
   rnd.seed(0);
 
-  optConstrained(x, NoArr, p);
+  OptConstrained(x, NoArr, p)
+      .run();
 
   if(!!x_start) x_start = x;
 }
@@ -28,7 +29,7 @@ void testConstraint2(ConstrainedProblem& p, uint dim_x, arr& x_start=NoArr){
 // test the phase one optimization
 //
 
-void testPhaseOne(ConstrainedProblem& f, uint dim_x){
+void testPhaseOne(MathematicalProgram& f, uint dim_x){
   PhaseOneProblem metaF(f);
 
   arr x;
@@ -57,7 +58,8 @@ void TEST(CoveringSphere){
   cout <<"point = " <<x <<endl;
   cout <<"cr_init=" <<cr <<endl;
   checkJacobianCP(F, cr, 1e-4);
-  optConstrained(cr, NoArr, F);
+  OptConstrained(cr, NoArr, F)
+      .run();
   cout <<"cr_opt=" <<cr <<endl;
 }
 
@@ -69,18 +71,17 @@ void TEST(MathematicalProgram){
   arr x, phi;
   x = P->getInitializationSample();
 
-  P->evaluate(phi, NoArr, NoArr, x);
+  P->evaluate(phi, NoArr, x);
   cout <<x <<endl <<phi;
 
-  Conv_MathematicalProgram_ConstrainedProblem F(P);
-  checkJacobianCP(F, x, 1e-4);
+  //Conv_MathematicalProgram_ConstrainedProblem F(P);
+  checkJacobianCP(*P, x, 1e-4);
 
-  OptConstrained opt(x, NoArr, F, 6);
-  P->getBounds(opt.newton.bound_lo, opt.newton.bound_up);
+  OptConstrained opt(x, NoArr, *P, OptOptions().set_verbose(6));
+  P->getBounds(opt.newton.bounds_lo, opt.newton.bounds_up);
   opt.run();
 
   cout <<"optimum: " <<x <<endl;
-
 
 }
 
@@ -89,16 +90,16 @@ void TEST(MathematicalProgram){
 int main(int argc,char** argv){
   rai::initCmdLine(argc,argv);
 
+  rnd.clockSeed();
+
   ChoiceConstraintFunction F;
 //  RandomLPFunction F;
 //  SimpleConstraintFunction F;
-//  testConstraint(F, F.dim_x());
-//  testConstraint2(F, F.dim_x());
+  testConstraint(F, F.getDimension());
+//  testConstraint2(F, F.getDimension());
 
 //  testCoveringSphere();
-  testMathematicalProgram();
-
-
+//  testMathematicalProgram();
 
   return 0;
 }

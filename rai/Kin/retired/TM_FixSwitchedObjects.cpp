@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -61,17 +61,17 @@ void TM_FixSwichedObjects::phi(arr& y, arr& J, const ConfigurationL& Ktuple) {
 #if 0
       TM_Default pos(TMT_pos, id, NoVector, b0Parent->ID);
       pos.order=1;
-      pos.Feature::__phi(y({M*i, M*i+2})(), (!!J?J({M*i, M*i+2})():NoArr), Ktuple);
+      pos.Feature::eval(y({M*i, M*i+2})(), (!!J?J({M*i, M*i+2})():NoArr), Ktuple);
 
       TM_Default quat(TMT_quat, id, NoVector, b0Parent->ID); //mt: NOT TMT_quatDiff!! (this would compute the diff to world, which zeros the w=1...)
       // flip the quaternion sign if necessary
       quat.flipTargetSignOnNegScalarProduct = true;
       quat.order=1;
-      quat.Feature::__phi(y({M*i+3, M*i+6})(), (!!J?J({M*i+3, M*i+6})():NoArr), Ktuple);
+      quat.Feature::eval(y({M*i+3, M*i+6})(), (!!J?J({M*i+3, M*i+6})():NoArr), Ktuple);
 #else
       TM_Default pos(TMT_pos, id);
       pos.order=1;
-      pos.Feature::__phi(y({M*i, M*i+2})(), (!!J?J({M*i, M*i+2})():NoArr), Ktuple);
+      pos.Feature::eval(y({M*i, M*i+2})(), (!!J?J({M*i, M*i+2})():NoArr), Ktuple);
 
       TM_AngVel rot(id);
       rot.order=1;
@@ -81,21 +81,21 @@ void TM_FixSwichedObjects::phi(arr& y, arr& J, const ConfigurationL& Ktuple) {
 #if 0
       TM_Default pos(TMT_pos, id);
       pos.order=2;
-      pos.Feature::__phi(y({M*i, M*i+2})(), (!!J?J({M*i, M*i+2})():NoArr), Ktuple);
+      pos.Feature::eval(y({M*i, M*i+2})(), (!!J?J({M*i, M*i+2})():NoArr), Ktuple);
 
       TM_Default quat(TMT_quat, id); //mt: NOT TMT_quatDiff!! (this would compute the diff to world, which zeros the w=1...)
       // flip the quaternion sign if necessary
       quat.flipTargetSignOnNegScalarProduct = true;
       quat.order=2;
-      quat.Feature::__phi(y({M*i+3, M*i+6})(), (!!J?J({M*i+3, M*i+6})():NoArr), Ktuple);
+      quat.Feature::eval(y({M*i+3, M*i+6})(), (!!J?J({M*i+3, M*i+6})():NoArr), Ktuple);
 #elif 0
       TM_Default pose(TMT_pose, id, NoVector, b0Parent->ID);
       pose.order=2;
-      pose.Feature::__phi(y({M*i, M*i+6})(), (!!J?J({M*i, M*i+6})():NoArr), Ktuple);
+      pose.Feature::eval(y({M*i, M*i+6})(), (!!J?J({M*i, M*i+6})():NoArr), Ktuple);
 #else
       TM_Default pos(TMT_pos, id);
       pos.order=2;
-      pos.Feature::__phi(y({M*i, M*i+2})(), (!!J?J({M*i, M*i+2})():NoArr), Ktuple);
+      pos.Feature::eval(y({M*i, M*i+2})(), (!!J?J({M*i, M*i+2})():NoArr), Ktuple);
 
       TM_AngVel rot(id);
       rot.order=2;

@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -11,15 +11,22 @@
 #include "mesh.h"
 
 struct AssimpLoader {
-  std::vector<rai::Mesh> meshes;
+  rai::Array<MeshA> meshes;
+  rai::Array<rai::Transformation> poses;
+  StringA names;
+  StringA parents;
   std::string directory;
+  int verbose=0;
 
-  AssimpLoader(std::string const& path, bool flipYZ=true);
+  AssimpLoader(std::string const& path, bool flipYZ=true, bool relativeMeshPoses=false);
   AssimpLoader(const struct aiScene* scene);
 
   rai::Mesh getSingleMesh();
 
  private:
-  void loadNode(const struct aiNode* node, const struct aiScene* scene, arr T);
+  void loadNode(const struct aiNode* node, const struct aiScene* scene, arr T, bool relativeMeshPoses);
   rai::Mesh loadMesh(const struct aiMesh* mesh, const struct aiScene* scene);
 };
+
+void buildAiMesh(const rai::Mesh& M, struct aiMesh* pMesh);
+void writeAssimp(const rai::Mesh& M, const char* filename, const char* format);

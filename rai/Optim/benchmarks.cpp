@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -14,9 +14,30 @@
 double _RosenbrockFunction(arr& g, arr& H, const arr& x) {
   double f=0.;
   for(uint i=1; i<x.N; i++) f += rai::sqr(x(i)-rai::sqr(x(i-1))) + .01*rai::sqr(1-10.*x(i-1));
-  f = ::log(1.+f);
-  if(!!g) NIY;
-  if(!!H) NIY;
+//  f = ::log(1.+f);
+  if(!!g) {
+    g.resize(x.N).setZero();
+    for(uint i=1; i<x.N; i++) {
+      g(i) += 2.*(x(i)-rai::sqr(x(i-1)));
+      g(i-1) += 2.*(x(i)-rai::sqr(x(i-1)))*(-2.*x(i-1));
+      g(i-1) += .01*2.*(1-10.*x(i-1))*(-10.);
+    }
+  }
+  if(!!H) {
+    H.resize(x.N, x.N).setZero();
+    for(uint i=1; i<x.N; i++) {
+      //g(i) += 2.*(x(i)-rai::sqr(x(i-1)));
+      H(i, i) += 2.;
+      H(i, i-1) += -4.*x(i-1);
+
+      //g(i-1) += 2.*(x(i)-rai::sqr(x(i-1)))*(-2.*x(i-1));
+      H(i-1, i) += -4.*x(i-1);
+      H(i-1, i-1) += -4.*x(i-1)*(-2.*x(i-1)) - 4.*(x(i)-rai::sqr(x(i-1)));
+
+      //g(i-1) += .01*2.*(1-10.*x(i-1))*(-10.);
+      H(i-1, i-1) += .01*2.*(-10.)*(-10.);
+    }
+  }
   return f;
 };
 
@@ -32,7 +53,7 @@ double _RastriginFunction(arr& g, arr& H, const arr& x) {
     for(uint i=0; i<x.N; i++) g(i) = 2*x(i) + 10.*A*::sin(10.*x(i));
   }
   if(!!H) {
-    H.resize(x.N, x.N);  H.setZero();
+    H.resize(x.N, x.N).setZero();
     for(uint i=0; i<x.N; i++) H(i, i) = 2 + 100.*A*::cos(10.*x(i));
   }
   return f;
@@ -86,20 +107,23 @@ struct _ChoiceFunction : ScalarFunction {
   double fs(arr& g, arr& H, const arr& x) {
     //initialize on first call
     if(which==none) {
-      which = (Which) rai::getParameter<int>("fctChoice");
+      which = (Which) rai::getParameter<double>("fctChoice");
     }
     if(condition.N!=x.N) {
       condition.resize(x.N);
       double cond = rai::getParameter<double>("condition");
+      double curv = rai::getParameter<double>("curvature");
       if(x.N>1) {
-        for(uint i=0; i<x.N; i++) condition(i) = pow(cond, 0.5*i/(x.N-1));
+        for(uint i=0; i<x.N; i++) condition(i) = curv*pow(cond, 0.5*i/(x.N-1));
       } else {
-        condition = cond;
+        condition = curv;
       }
     }
 
-    arr y = x;
-    y *= condition; //elem-wise product
+    arr C = diag(condition);
+    C(0,1) = C(0,0);
+    C(1,0) = -C(1,1);
+    arr y = C * x;
     double f;
     switch(which) {
       case sum: f = _SumFunction(g, H, y); break;
@@ -109,8 +133,8 @@ struct _ChoiceFunction : ScalarFunction {
       case rastrigin: f = _RastriginFunction(g, H, y); break;
       default: NIY;
     }
-    if(!!g) g *= condition; //elem-wise product
-    if(!!H) H = condition%H%condition;
+    if(!!g) g = ~C*g; //elem-wise product
+    if(!!H) H = ~C * H * C;
     return f;
   }
 
@@ -264,3 +288,97 @@ void ParticleAroundWalls2::phi(arr& phi, arrA& J, arrA& H, uintA& featureTimes, 
   }
   CHECK_EQ(m, M, "");
 }
+
+ChoiceConstraintFunction::ChoiceConstraintFunction() {
+  which = (WhichConstraint) rai::getParameter<double>("constraintChoice");
+  n = rai::getParameter<uint>("dim", 2);
+}
+
+uint ChoiceConstraintFunction::getDimension() {
+  return n;
+}
+
+void ChoiceConstraintFunction::getFeatureTypes(ObjectiveTypeA& tt) {
+  tt.clear();
+  tt.append(OT_f);
+  switch(which) {
+    case wedge2D:
+      tt.append(consts(OT_ineq, n));
+      break;
+    case halfcircle2D:
+      tt.append(OT_ineq);
+      tt.append(OT_ineq);
+      break;
+    case circleLine2D:
+      tt.append(OT_ineq);
+      tt.append(OT_eq);
+      break;
+    case randomLinear:
+      tt.append(consts(OT_ineq, 5*n+5));
+      break;
+    case boundConstrained:
+      break;
+    case boundConstrainedIneq:
+      tt.append(OT_ineq);
+      break;
+    default: HALT("not taken care of");
+  }
+}
+
+void ChoiceConstraintFunction::getBounds(arr& bounds_lo, arr& bounds_hi) {
+  bounds_lo.resize(n) = -2.;
+  bounds_hi.resize(n) = +2.;
+  if(which==boundConstrained){
+    bounds_lo(0) = +0.5;
+  }
+}
+
+void ChoiceConstraintFunction::evaluate(arr& phi, arr& J, const arr& x) {
+  CHECK_EQ(x.N, n, "");
+  phi.clear();  if(!!J) J.clear();
+
+  phi.append(ChoiceFunction()(J, NoArr, x));
+
+  switch(which) {
+    case wedge2D:
+      for(uint i=0; i<x.N; i++) { phi.append(-sum(x)+1.5*x(i)-.2); }
+      if(!!J) { arr Jg(x.N, x.N); Jg=-1.; for(uint i=0; i<x.N; i++) Jg(i, i) = +.5; J.append(Jg); }
+      break;
+    case halfcircle2D:
+      phi.append(sumOfSqr(x)-.25);  if(!!J) J.append(2.*x);       //feasible=IN circle of radius .5
+      phi.append(-x(0)-.2);         if(!!J) { J.append(zeros(x.N)); J.elem(-x.N) = -1.; }      //feasible=right of -.2
+      break;
+    case circleLine2D:
+      phi.append(sumOfSqr(x)-.25);  if(!!J) J.append(2.*x);       //feasible=IN circle of radius .5
+      phi.append(x(0));             if(!!J) { J.append(zeros(x.N)); J.elem(-x.N) = 1.; }
+      break;
+    case randomLinear: {
+      if(!randomG.N) {
+        randomG.resize(5*x.N+5, x.N+1);
+        rndGauss(randomG, 1.);
+        for(uint i=0; i<randomG.d0; i++) {
+          if(randomG(i, 0)>0.) randomG(i, 0)*=-1.; //ensure (0,0) is feasible
+          randomG(i, 0) -= .2;
+        }
+      }
+      CHECK_EQ(randomG.d1, x.N+1, "you changed dimensionality");
+      phi.append(randomG * cat({1.}, x));
+      if(!!J) J.append(randomG.sub(0, -1, 1, -1));
+    } break;
+    case boundConstrained: {
+//      phi.append(1. - x(0));
+//      if(!!J) { J.append( eyeVec(x.N, 0) ); }
+    } break;
+    case boundConstrainedIneq: {
+      phi.append(0.5 - x(0));
+      if(!!J) { J.append( -eyeVec(x.N, 0) ); }
+    } break;
+  }
+
+  if(!!J) J.reshape(J.N/x.N, x.N);
+}
+
+void ChoiceConstraintFunction::getFHessian(arr& H, const arr& x) {
+  ChoiceFunction()(NoArr, H, x);
+}
+

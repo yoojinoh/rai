@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -47,6 +47,7 @@ enum FeatureSymbol {
   FS_oppose,
 
   FS_qItself,
+  FS_qControl,
 
   FS_aboveBox,
   FS_insideBox,
@@ -74,4 +75,9 @@ struct Configuration;
 }
 struct Feature;
 
-ptr<Feature> symbols2feature(FeatureSymbol feat, const StringA& frames, const rai::Configuration& world, const arr& scale=NoArr, const arr& target=NoArr, int order=-1);
+ptr<Feature> symbols2feature(FeatureSymbol feat, const StringA& frames, const rai::Configuration& C, const arr& scale=NoArr, const arr& target=NoArr, int order=-1);
+
+inline ptr<Feature> make_feature(FeatureSymbol feat, const StringA& frames, const rai::Configuration& C, const arr& scale=NoArr, const arr& target=NoArr, int order=-1){
+  return symbols2feature(feat, frames, C, scale, target, order);
+}
+

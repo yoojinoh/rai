@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -36,7 +36,7 @@ struct TowerProblem_new:LogicGeometricProgram {
   uint nObjects;
 
   TowerProblem_new() {
-    world_root.init("LGP-world.g");
+    world_root.readFromGraph("LGP-world.g");
     fol_root.init(FILE("LGP-symbols.g"));
     nObjects = world_root.bodies.N;
     setRandom();
@@ -55,7 +55,7 @@ struct TowerProblem_new:LogicGeometricProgram {
 
 struct SticksProblem:LogicGeometricProgram {
   SticksProblem() {
-    world_root.init("LGP-sticks-world.g");
+    world_root.readFromGraph("LGP-sticks-world.g");
     fol_root.init(FILE("LGP-sticks-symbols.g"));
   }
   ~SticksProblem() {}

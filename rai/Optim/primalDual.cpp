@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -8,7 +8,7 @@
 
 #include "primalDual.h"
 
-PrimalDualProblem::PrimalDualProblem(const arr& x, ConstrainedProblem& P, OptOptions opt, arr& lambdaInit)
+PrimalDualProblem::PrimalDualProblem(const arr& x, MathematicalProgram& P, OptOptions opt, arr& lambdaInit)
   : L(P, opt, lambdaInit), mu(opt.muLBInit) {
 
   L.mu = L.nu = L.muLB = 0.;
@@ -205,16 +205,16 @@ void PrimalDualProblem::updateMu() {
 
 //==============================================================================
 
-OptPrimalDual::OptPrimalDual(arr& x, arr& dual, ConstrainedProblem& P, int verbose, OptOptions opt)
+OptPrimalDual::OptPrimalDual(arr& x, arr& dual, MathematicalProgram& P, int verbose, OptOptions opt)
   : x(x), PD(x, P, opt, dual), newton(PD.x_lambda, PD, opt), opt(opt) {
 
   if(verbose>=0) opt.verbose=verbose;
-  newton.o.verbose = rai::MAX(opt.verbose-1, 0);
+  newton.options.verbose = rai::MAX(opt.verbose-1, 0);
 
   newton.rootFinding = true;
-  newton.bound_lo.resize(newton.x.N).setZero();
-  newton.bound_up.resize(newton.x.N) = -1.;
-  for(uint i=x.N+PD.n_eq; i<newton.x.N; i++) newton.bound_up(i) = 1e10;
+  newton.bounds_lo.resize(newton.x.N).setZero();
+  newton.bounds_up.resize(newton.x.N) = -1.;
+  for(uint i=x.N+PD.n_eq; i<newton.x.N; i++) newton.bounds_up(i) = 1e10;
 
   if(opt.verbose>0) cout <<"***** OptPrimalDual" <<endl;
 }
@@ -224,7 +224,7 @@ uint OptPrimalDual::run(uint maxIt) {
   newton.logFile = fil;
 
   //newton loop (cp newton.run() )
-  newton.numTinySteps=0;
+  newton.numTinyFSteps=0;
   for(uint i=0; i<maxIt; i++) {
     newton.step();
 
@@ -232,7 +232,7 @@ uint OptPrimalDual::run(uint maxIt) {
       if(opt.stopGTolerance<0.
           || PD.L.get_sumOfGviolations() + PD.L.get_sumOfHviolations() < opt.stopGTolerance) {
         if(newton.stopCriterion==newton.stopStepFailed) continue;
-        if(newton.stopCriterion>=newton.stopCrit1) break;
+        if(newton.stopCriterion>=newton.stopDeltaConverge) break;
       }
     }
 

@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -23,7 +23,6 @@ struct AStarOnGraph {
 
   AStarOnGraph(rai::Graph& _G, NodeType* _start, NodeType* _goal)
     :G(_G), start(_start), goal(_goal) {
-    rai::Array<NodeType*>::memMove = true;
     start->astar_g = 0;
     double f = start->astar_heuristic(goal);
     queue.add(f, start);

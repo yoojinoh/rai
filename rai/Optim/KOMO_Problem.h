@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -21,16 +21,18 @@ struct KOMO_Problem {
 };
 
 //-- converters
-struct Conv_KOMO_ConstrainedProblem : ConstrainedProblem {
+struct Conv_KOMOProblem_MathematicalProgram : MathematicalProgram {
   KOMO_Problem& KOMO;
   uintA variableDimensions, varDimIntegral;
   uintA featureTimes;
   ObjectiveTypeA featureTypes;
   arrA J_KOMO, H_KOMO;
 
-  Conv_KOMO_ConstrainedProblem(KOMO_Problem& P);
+  Conv_KOMOProblem_MathematicalProgram(KOMO_Problem& P);
 
-  void phi(arr& phi, arr& J, arr& H, ObjectiveTypeA& tt, const arr& x);
+  virtual uint getDimension() { return varDimIntegral.elem(-1); }
+  virtual void getFeatureTypes(ObjectiveTypeA& ft) { ft = featureTypes; }
+  virtual void evaluate(arr& phi, arr& J, const arr& z);
 };
 
 struct KOMO_GraphProblem : GraphProblem {

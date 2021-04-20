@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -15,7 +15,7 @@
 #include "../Core/thread.h"
 
 /// The task controller generates the message send to the RT_Controller
-/// the problem is defined by the list of CtrlTasks
+/// the problem is defined by the list of CtrlObjectives
 struct TaskControlThread : Thread {
   unique_ptr<struct sTaskControlThread> self;
 
@@ -25,7 +25,7 @@ struct TaskControlThread : Thread {
 
   VAR(CtrlMsg, ctrl_ref) //< the message send to the RTController
   VAR(CtrlMsg, ctrl_obs) //< the message received from the RTController
-  VAR(rai::Array<CtrlTask*>, ctrlTasks)
+  VAR(rai::Array<CtrlObjective*>, ctrlTasks)
   VAR(rai::String, effects)
   VAR(rai::Configuration, modelWorld)
   VAR(bool, fixBase)
@@ -60,7 +60,7 @@ struct TaskControlThread : Thread {
   arr fRInitialOffset;
 
  public:
-  TaskControlThread(const char* robot="none", const rai::Configuration& world = NoWorld);
+  TaskControlThread(const char* robot="none", const rai::Configuration& world = NoConfiguration);
   ~TaskControlThread();
 
   void open();

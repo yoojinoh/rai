@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -12,7 +12,11 @@
 #include "mesh.h"
 
 extern "C" {
-#include <qhull/qhull_a.h>
+#ifdef RAI_MSVC
+#  include <libqhull/qhull_a.h>
+#else
+#  include <qhull/qhull_a.h>
+#endif
 }
 #undef dX
 #undef dY
@@ -37,14 +41,14 @@ void getQhullState(uint D, arr& points, arr& vertices, arr& lines) {
   vertexT* vertex, **vertexp;
   facetT* facet;
 
-//  plot->Opengl();
-//  plot->Clear();
+//  plot()->Opengl();
+//  plot()->Clear();
 
   cout <<"\n** points:";
   FORALLpoints {
     points.setCarray(point, D);
     cout <<"\n  " <<points;
-//    plot->Points(x);
+//    plot()->Points(x);
   }
 
   cout <<"\n** vertices:";
@@ -67,7 +71,7 @@ void getQhullState(uint D, arr& points, arr& vertices, arr& lines) {
     x.setCarray(((vertexT*)(facet->vertices->e[0].p))->point, D);
     lines.append(x);
     lines.reshape(lines.N/D, D);
-//    plot->Line(line);
+//    plot()->Line(line);
   }
   cout <<endl;
 }
@@ -126,7 +130,7 @@ double distanceToConvexHull(const arr& X, const arr& y, arr& distances, arr& pro
 
     if(!!projectedPoints) {
       arr p = Y[i];
-      arr n(bestfacet->normal, p.N);
+      arr n(bestfacet->normal, p.N, true);
       projectedPoints.append(p - bestdist*n);
       if(y.nd==2) projectedPoints.reshape(i+1, X.d1);
     }
@@ -144,16 +148,16 @@ double distanceToConvexHull(const arr& X, const arr& y, arr& distances, arr& pro
 //    arr line;
 //    NIY;
 ////    plotQhullState(X.d1);
-////    plot->Points(y);
+////    plot()->Points(y);
 //    if(projectedPoint) {
 //      line.clear();
 //      line.append(y);
 //      line.append(*projectedPoint);
-////      plot->Points(*projectedPoint);
+////      plot()->Points(*projectedPoint);
 //      line.reshape(2, X.d1);
-////      plot->Line(line);
+////      plot()->Line(line);
 //    }
-//    plot->update();
+//    plot()->update();
 
 //    //cout <<"**best facet: " <<bestfacet->id <<endl;
 //    //FOREACHvertex_(facet->vertices) cout <<vertex->id <<' ';
@@ -380,7 +384,7 @@ void getDelaunayEdges(uintA& E, const arr& V) {
   uint i, j, k, dim=V.d1;
 
   E.clear();
-  uint face[dim+1];
+  std::vector<uint> face(dim+1);
   FORALLfacets {
     if(!facet->upperdelaunay) {
       i=0;
@@ -632,13 +636,13 @@ arr convconv_intersect(const arr& A, const arr& B) {
   arr C;
   C.setCarray((double*)res->v, 2*res->len);
   C.reshape(C.N/2, 2);
-  
-//  plot->Clear();
-//  plot->Line(C+.002, true); cout <<"#C=" <<C.d0 <<endl;
-//  plot->Line(C-.002, true);
-//  plot->Line(AA, true);
-//  plot->Line(BB, true);
-//  plot->Opengl();
+
+//  plot()->Clear();
+//  plot()->Line(C+.002, true); cout <<"#C=" <<C.d0 <<endl;
+//  plot()->Line(C-.002, true);
+//  plot()->Line(AA, true);
+//  plot()->Line(BB, true);
+//  plot()->Opengl();
 //  cout <<"\n====\n" <<AA <<"\n----\n" <<B <<"\n----\n" <<C<<"\n====\n" <<endl;
 //  rai::wait();
 

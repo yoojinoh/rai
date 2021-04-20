@@ -11,8 +11,8 @@ struct MyThread: Thread{
     threadOpen();
   }
   void step(){
-    x.set()++;
-    COUT <<rai::realTime() <<"sec Thread " <<n <<" is counting:" <<x.get() <<endl;
+    if(n<=1) x.set()++; //only thread 1 should modify x!
+    COUT <<"Thread " <<n <<": " <<rai::realTime() <<"sec  - is counting:" <<x.get() <<endl;
   }
 };
 
@@ -29,7 +29,7 @@ void TEST(Thread){
   t1.threadClose();
   t2.threadClose();
 
-  CHECK(x.get()>=11. && x.get()<=15.,"");
+  CHECK(x.get()>=5. && x.get()<=7.,"");
 }
 
 //===========================================================================
@@ -129,7 +129,8 @@ void TEST(Sorter){
 
     for(uint k=0;k<20;k++){
       //if(moduleShutdown()->getStatus()) break;
-      for(uint i=0;i<N;i++) cout <<x(i).get() <<' ';  cout <<endl;
+      for(uint i=0;i<N;i++) cout <<x(i).get() <<' ';
+      cout <<endl;
       for(auto& s:ps) s->threadStep();
       rai::wait(.1);
     }

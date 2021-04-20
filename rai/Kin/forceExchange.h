@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -16,25 +16,36 @@ struct PairCollision;
 
 namespace rai {
 
+//===========================================================================
+
+enum ForceExchangeType { FXT_none=-1, FXT_poa=0, FXT_torque=1, FXT_force };
+
 ///Description of a ForceExchange
 struct ForceExchange : NonCopyable, GLDrawer {
-  Frame& a, &b;
-
+  Frame &a, &b;
+  uint qIndex=UINT_MAX;
+  ForceExchangeType type;
+  double scale=1.;
  private:
   PairCollision* __coll=0;
  public:
 
-  uint qIndex=UINT_MAX;
-  arr position;
+  arr poa;
   arr force;
+  arr torque;
 
-  ForceExchange(Frame& a, Frame& b, ForceExchange* copyContact=nullptr);
+  ForceExchange(Frame& a, Frame& b, ForceExchangeType _type, ForceExchange* copyContact=nullptr);
   ~ForceExchange();
 
   void setZero();
-  uint qDim() { return 6; }
+  uint qDim() { if(type==FXT_force) return 3; return 6; }
   void calc_F_from_q(const arr& q, uint n);
   arr calc_q_from_F() const;
+
+  virtual double sign(Frame *f) const { if(&a==f) return 1.; return -1.; }
+  virtual void kinPOA(arr& y, arr& J) const;
+  virtual void kinForce(arr& y, arr& J) const;
+  virtual void kinTorque(arr& y, arr& J) const;
 
   PairCollision* coll();
 
@@ -43,14 +54,8 @@ struct ForceExchange : NonCopyable, GLDrawer {
 };
 stdOutPipe(ForceExchange)
 
-struct TM_ContactNegDistance : Feature {
-  const ForceExchange& C;
+//===========================================================================
 
-  TM_ContactNegDistance(const ForceExchange& contact) : C(contact) {}
-
-  void phi(arr& y, arr& J, const rai::Configuration& K);
-  virtual uint dim_phi(const rai::Configuration& K) { return 1; }
-  virtual rai::String shortTag(const rai::Configuration& K) { return STRING("ContactNegDistance-"<<C.a.name<<'-'<<C.b.name); }
-};
+rai::ForceExchange* getContact(rai::Frame* a, rai::Frame* b, bool raiseErrorIfNonExist=true);
 
 } //rai

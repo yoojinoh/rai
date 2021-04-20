@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -22,7 +22,7 @@ struct PrimalDualProblem : ScalarFunction {
   double dualityMeasure=1.;
   bool primalFeasible=false;
 
-  PrimalDualProblem(const arr& x, ConstrainedProblem& P, OptOptions opt=NOOPT, arr& lambdaInit=NoArr);
+  PrimalDualProblem(const arr& x, MathematicalProgram& P, OptOptions opt=NOOPT, arr& lambdaInit=NoArr);
 
   double primalDual(arr& r, arr& R, const arr& x); ///< CORE METHOD: the unconstrained scalar function F
 
@@ -42,7 +42,7 @@ struct OptPrimalDual {
   uint its=0;
   ofstream* fil=nullptr;
 
-  OptPrimalDual(arr& x, arr& dual, ConstrainedProblem& P, int verbose=-1, OptOptions opt=NOOPT);
+  OptPrimalDual(arr& x, arr& dual, MathematicalProgram& P, int verbose=-1, OptOptions opt=NOOPT);
   ~OptPrimalDual();
   uint run(uint maxIt=1000);
 };

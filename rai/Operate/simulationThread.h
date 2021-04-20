@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -36,12 +36,12 @@ struct SimulationThread : Thread, RobotAbstraction {
   virtual StringA getJointNames();
   virtual arr getHomePose();
   //-- execution
-  virtual bool executeMotion(const StringA& joints, const arr& path, const arr& times, double timeScale=1., bool append=false);
+  virtual bool executeMotion(const uintA& joints, const arr& path, const arr& times, double timeScale=1., bool append=false);
   virtual void execGripper(const rai::String& gripperName, double position, double force=40.);
   virtual void attach(const char* a, const char* b);
   //-- feedback
-  virtual arr getJointPositions(const StringA& joints= {});
+  virtual arr getJointPositions(const uintA& joints= {});
 
   //--- artificial intervention
-  void addFile(const char* filename, const char* parentOfRoot=nullptr, const rai::Transformation& relOfRoot=0);
+  void addFile(const char* filename/*, const char* parentOfRoot=nullptr, const rai::Transformation& relOfRoot=0*/);
 };

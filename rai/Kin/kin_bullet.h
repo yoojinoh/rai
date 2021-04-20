@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -22,5 +22,18 @@ struct BulletInterface {
   void pushFullState(const FrameL& frames, const arr& frameVelocities=NoArr);
   void pullDynamicStates(FrameL& frames, arr& frameVelocities=NoArr);
 
+  void changeObjectType(rai::Frame* f, int _type);
+
   void saveBulletFile(const char* filename);
+};
+
+
+struct BulletBridge{
+  class btDiscreteDynamicsWorld* dynamicsWorld;
+  rai::Array<class btRigidBody*> actors;
+
+  BulletBridge(class btDiscreteDynamicsWorld* _dynamicsWorld);
+
+  void getConfiguration(rai::Configuration& C);
+  void pullPoses(rai::Configuration& C, bool alsoStaticAndKinematic);
 };

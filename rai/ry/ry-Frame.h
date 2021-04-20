@@ -1,15 +1,17 @@
+/*  ------------------------------------------------------------------
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
+
+    This code is distributed under the MIT License.
+    Please see <root-path>/LICENSE for details.
+    --------------------------------------------------------------  */
+
 #pragma once
 
-#include "../Core/thread.h"
+#ifdef RAI_PYBIND
 
-namespace rai{
-  struct Configuration;
-  struct Frame;
-}
+#include <pybind11/pybind11.h>
 
-namespace ry{
-struct RyFrame {
-  ptr<Var_data<rai::Configuration>> config; //only to ensure the containing configuration is not destroyed
-  rai::Frame* frame=0;
-};
-}
+void init_Frame(pybind11::module& m);
+
+#endif

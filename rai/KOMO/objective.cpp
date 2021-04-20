@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -12,10 +12,10 @@
 
 //===========================================================================
 
-void Objective::setCostSpecs(int fromStep, int toStep, bool sparse) {
+void Objective::setCostSpecs(int fromStep, int toStep, bool tuples) {
   CHECK_GE(fromStep, 0, "");
 //  CHECK_GE(toStep, fromStep, "");
-  if(!sparse) {
+  if(!tuples) {
     if(toStep>=fromStep)
       configs.resize(toStep+1).setZero();
     else configs.clear();
@@ -30,7 +30,7 @@ void Objective::setCostSpecs(int fromStep, int toStep, bool sparse) {
 }
 
 void Objective::setCostSpecs(const arr& times, int stepsPerPhase, uint T,
-                             int deltaFromStep, int deltaToStep, bool sparse) {
+                             int deltaFromStep, int deltaToStep, bool tuples) {
 
   double fromTime=0, toTime=-1.;
   if(!times.N) {
@@ -58,7 +58,7 @@ void Objective::setCostSpecs(const arr& times, int stepsPerPhase, uint T,
 //  if(toStep<0) toStep=0;
   if(toStep>=(int)T && T>0) toStep=T-1;
 
-  setCostSpecs(fromStep, toStep, sparse);
+  setCostSpecs(fromStep, toStep, tuples);
 }
 
 bool Objective::isActive(uint t) {

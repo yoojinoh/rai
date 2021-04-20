@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -152,8 +152,7 @@ baxter_core_msgs::EndEffectorCommand getVacuumGripperMsg(const arr& q_ref, const
 
 SendPositionCommandsToBaxter::SendPositionCommandsToBaxter(const rai::Configuration& kw, const Var<CtrlMsg>& _ctrl_ref)
   : Thread("SendPositionCommandsToBaxter"),
-    ctrl_ref(nullptr, true),
-    s(0) {
+    ctrl_ref(nullptr, true) {
 
   self = make_unique<sBaxterInterface>(true);
   self->baxterModel = kw;
@@ -164,7 +163,7 @@ void SendPositionCommandsToBaxter::open() {
 }
 
 void SendPositionCommandsToBaxter::step() {
-  if(s) {
+  if(self) {
     arr q_ref = ctrl_ref.get()->q;
     if(!q_ref.N) return;
 
@@ -190,10 +189,10 @@ void SendPositionCommandsToBaxter::step() {
 }
 
 void SendPositionCommandsToBaxter::close() {
-  if(s) s.rewset()
+  if(self) self.reset();
 }
 
-BaxterInterface::BaxterInterface(bool useRosDefault) : s(0) {
+BaxterInterface::BaxterInterface(bool useRosDefault) {
   self = make_unique<sBaxterInterface>(useRosDefault);
 }
 

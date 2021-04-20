@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -806,7 +806,6 @@ void OdeInterface::getGroundContact(boolA& cts) {
 
 void OdeInterface::importProxiesFromOde() {
   uint i;
-  C.proxies.memMove=true;
   C.proxies.resizeCopy(conts.N);
   for(i=0; i<conts.N; i++) C.proxies(i) = new rai::Proxy;
   dContactGeom* c;

@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -114,13 +114,13 @@ void SubGraphProblem::optim(int verbose) {
   rai::timerStart();
 #if 0
   ModGraphProblem Gsel(*this);
-  Conv_Graph_ConstrainedProblem C(Gsel);
+  Conv_Graph_MathematicalProgram C(Gsel);
 #else
-  Conv_Graph_ConstrainedProblem C(*this);
+  Conv_Graph_MathematicalProgram C(*this);
 #endif
   C.reportProblem(logFile);
   arr dual;
-  OptConstrained opt(x, dual, C, 0); //rai::MAX(verbose-2, 0));
+  OptConstrained opt(x, dual, C); //rai::MAX(verbose-2, 0));
   opt.L.logFile = &logFile;
   opt.run();
   //    opt.newton.evals;

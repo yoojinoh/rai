@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -76,19 +76,20 @@ void KOMO_GraphProblem::phi(arr& phi, arrA& J, arrA& H, const arr& x) {
   KOMO.phi(phi, J, H, NoUintA, featureTypes, x);
 }
 
-Conv_KOMO_ConstrainedProblem::Conv_KOMO_ConstrainedProblem(KOMO_Problem& P) : KOMO(P) {
+Conv_KOMOProblem_MathematicalProgram::Conv_KOMOProblem_MathematicalProgram(KOMO_Problem& P) : KOMO(P) {
   KOMO.getStructure(variableDimensions, featureTimes, featureTypes);
   varDimIntegral = integral(variableDimensions);
 }
 
-void Conv_KOMO_ConstrainedProblem::phi(arr& phi, arr& J, arr& H, ObjectiveTypeA& featureTypes, const arr& x) {
-  KOMO.phi(phi, (!!J?J_KOMO:NoArrA), (!!H?H_KOMO:NoArrA), featureTimes, featureTypes, x);
+void Conv_KOMOProblem_MathematicalProgram::evaluate(arr& phi, arr& J, const arr& x) {
+  KOMO.phi(phi, (!!J?J_KOMO:NoArrA), NoArrA, featureTimes, featureTypes, x);
 
   //-- construct a row-shifed J from the array of featureJs
   if(!!J) {
     uint k=KOMO.get_k();
     uint dim_xmax = max(variableDimensions);
-    rai::RowShifted* Jaux = makeRowShifted(J, phi.N, (k+1)*dim_xmax, x.N);
+    rai::RowShifted& Jaux = J.rowShifted();
+    Jaux.resize(phi.N, x.N, (k+1)*dim_xmax);
     J.setZero();
 
     //loop over features
@@ -96,27 +97,13 @@ void Conv_KOMO_ConstrainedProblem::phi(arr& phi, arr& J, arr& H, ObjectiveTypeA&
       arr& Ji = J_KOMO(i);
       CHECK_LE(Ji.N, J.d1, "");
       //        J({i, 0, J_KOMO(i}).N-1) = J_KOMO(i);
-      memmove(&J(i, 0), Ji.p, Ji.sizeT*Ji.N);
+      memmove(&J.elem(i, 0), Ji.p, Ji.sizeT*Ji.N);
       uint t=featureTimes(i);
-      if(t<=k) Jaux->rowShift(i) = 0;
-      else Jaux->rowShift(i) =  varDimIntegral(t-k-1);
+      if(t<=k) Jaux.rowShift(i) = 0;
+      else Jaux.rowShift(i) =  varDimIntegral(t-k-1);
     }
 
-    Jaux->reshift();
-    Jaux->computeColPatches(true);
+    Jaux.reshift();
+    Jaux.computeColPatches(true);
   }
-
-  if(!!H) H.clear();
-  /*
-   if(!!H) {
-    bool hasFterm = false;
-    if(!!featureTypes) hasFterm = (featureTypes.findValue(OT_f) != -1);
-    if(hasFterm) {
-      CHECK(H_KOMO.N, "this problem has f-terms -- I need a Hessian!");
-      NIY
-    } else {
-      H.clear();
-    }
-  }
-  */
 }

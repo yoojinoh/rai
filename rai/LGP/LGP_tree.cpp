@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -31,12 +31,12 @@ bool sortComp2(const OptLGP_SolutionDataPtr& a, const OptLGP_SolutionDataPtr& b)
   return sortComp(a->node, b->node);
 }
 
-struct DisplayThread : MiniThread {
+struct DisplayThread : Thread {
   LGP_Tree* lgp;
   OpenGL gl;
   uint t=0;
   bool saveVideo=false;
-  DisplayThread(LGP_Tree* lgp) : MiniThread("OptLGP_Display"), lgp(lgp), gl("OptLGP", 3*displaySize, 2*displaySize) {}
+  DisplayThread(LGP_Tree* lgp) : Thread("OptLGP_Display"), lgp(lgp), gl("OptLGP", 3*displaySize, 2*displaySize) { threadLoop(); }
   ~DisplayThread() { threadClose(); }
   void resetSteppings() {
     lgp->solutions.writeAccess();
@@ -46,45 +46,41 @@ struct DisplayThread : MiniThread {
     lgp->solutions.deAccess();
   }
 
-  void main() {
-    //    Metronome tic(.1);
-    for(;;) {
-      if(getStatus()<0) break;
-      //      tic.waitForTic();
-      rai::wait(.1);
-      lgp->solutions.writeAccess();
-      uint numSolutions = lgp->solutions().N;
-      for(uint i=0; i<numSolutions; i++) {
-        lgp->solutions()(i)->displayStep++;
-        if(gl.views.N>i)
-          gl.views(i).text.clear() <<i <<':' <<lgp->solutions()(i)->displayStep <<": "
-                                   <<lgp->solutions()(i)->node->cost <<"|  " <<lgp->solutions()(i)->node->constraints.last() <<'\n'
-                                   <<lgp->solutions()(i)->decisions;
-      }
-      lgp->solutions.deAccess();
-      if(numSolutions)
-        gl.update();
-      if(saveVideo) write_ppm(gl.captureImage, STRING(OptLGPDataPath <<"vid/" <<std::setw(4)<<std::setfill('0')<<t++<<".ppm"));
+  void step(){
+    //      tic.waitForTic();
+    rai::wait(.1);
+    lgp->solutions.writeAccess();
+    uint numSolutions = lgp->solutions().N;
+    for(uint i=0; i<numSolutions; i++) {
+      lgp->solutions()(i)->displayStep++;
+      if(gl.views.N>i)
+        gl.views(i).text.clear() <<i <<':' <<lgp->solutions()(i)->displayStep <<": "
+                                <<lgp->solutions()(i)->node->cost <<"|  " <<lgp->solutions()(i)->node->constraints.last() <<'\n'
+                               <<lgp->solutions()(i)->decisions;
     }
+    lgp->solutions.deAccess();
+    if(numSolutions)
+      gl.update();
+    if(saveVideo) write_ppm(gl.captureImage, STRING(OptLGPDataPath <<"vid/" <<std::setw(4)<<std::setfill('0')<<t++<<".ppm"));
   }
 };
 
 void initFolStateFromKin(FOL_World& L, const rai::Configuration& K) {
-  for(rai::Frame* a:K.frames) if(a->ats["logical"]) {
-      const Graph& G = a->ats["logical"]->graph();
+  for(rai::Frame* a:K.frames) if(a->ats && (*a->ats)["logical"]) {
+      const Graph& G = (*a->ats)["logical"]->graph();
       for(Node* n:G) L.addFact({n->key, a->name});
-      L.addFact({"initial", a->name});
+//      L.addFact({"initial", a->name}); //*** THE INITIAL FACT WAS INTRODUCED TO SIMPLIFY SKELETONS - OBSOLETE ***
     }
-  for(rai::Frame* a:K.frames) if(a->shape && a->ats["logical"]) {
+  for(rai::Frame* a:K.frames) if(a->shape && a->ats && (*a->ats)["logical"]) {
       rai::Frame* p = a->getUpwardLink();
       if(!p) continue;
       FrameL F;
       p->getRigidSubFrames(F);
-      for(rai::Frame* b:F) if(b!=a && b->shape && b->ats["logical"]) {
+      for(rai::Frame* b:F) if(b!=a && b->shape && a->ats && (*b->ats)["logical"]) {
           L.addFact({"partOf", a->name, b->name});
         }
     }
-  for(rai::Frame* a:K.frames) if(a->shape && a->ats["logical"]) {
+  for(rai::Frame* a:K.frames) if(a->shape && a->ats && (*a->ats)["logical"]) {
       rai::Frame* p = a;
       while(p && !p->joint) p=p->parent;
       if(!p) continue;
@@ -95,7 +91,7 @@ void initFolStateFromKin(FOL_World& L, const rai::Configuration& K) {
         if(p->joint) break;
         p=p->parent;
       }
-      for(rai::Frame* b:F) if(b!=a && b->shape && b->ats["logical"]) {
+      for(rai::Frame* b:F) if(b!=a && b->shape && b->ats && (*b->ats)["logical"]) {
           L.addFact({"on", b->name, a->name});
         }
     }
@@ -103,7 +99,7 @@ void initFolStateFromKin(FOL_World& L, const rai::Configuration& K) {
 
 LGP_Tree::LGP_Tree()
   : verbose(2), numSteps(0) {
-  dataPath <<"z." <<rai::date2() <<"/";
+  dataPath <<"z." <<rai::date(true) <<"/";
   dataPath = rai::getParameter<rai::String>("LGP_dataPath", dataPath);
   rai::system(STRING("mkdir -p " <<dataPath));
   rai::system(STRING("rm -Rf " <<dataPath <<"vid  &&  rm -f " <<dataPath <<"*"));
@@ -114,7 +110,7 @@ LGP_Tree::LGP_Tree()
   collisions = rai::getParameter<bool>("LGP/collisions", true);
   displayTree = rai::getParameter<bool>("LGP/displayTree", false);
 
-  verbose = rai::getParameter<int>("LGP/verbose", 2);
+  verbose = rai::getParameter<double>("LGP/verbose", 2);
   if(verbose>0) fil.open(dataPath + "optLGP.dat"); //STRING("z.optLGP." <<rai::date() <<".dat"));
 
   cameraFocus = rai::getParameter<arr>("LGP/cameraFocus", {});
@@ -144,7 +140,7 @@ LGP_Tree::LGP_Tree(const rai::Configuration& _kin, const FOL_World& _fol) : LGP_
 
 LGP_Tree::~LGP_Tree() {
   views.clear();
-  if(dth) delete dth;
+  if(dth) dth.reset();
   delete root;
   root=nullptr;
   if(filNodes) { delete filNodes; filNodes=nullptr; }
@@ -159,18 +155,18 @@ void LGP_Tree::initDisplay() {
     views(1) = make_shared<KinPathViewer>(Var<ConfigurationL>(), 1.2, -1);
     views(2) = make_shared<KinPathViewer>(Var<ConfigurationL>(), 1.2, -1);
     views(3) = make_shared<KinPathViewer>(Var<ConfigurationL>(), .05, -2);
-    for(auto& v:views) if(v) v->copy.orsDrawJoints=v->copy.orsDrawMarkers=v->copy.orsDrawProxies=false;
+//    for(auto& v:views) if(v) v->copy.orsDrawJoints=v->copy.orsDrawMarkers=v->copy.orsDrawProxies=false;
   }
-  if(!dth) dth = new DisplayThread(this);
+  if(!dth) dth = make_shared<DisplayThread>(this);
 }
 
 void LGP_Tree::renderToVideo(int specificBound, const char* filePrefix) {
   if(specificBound<0) specificBound=displayBound;
-  CHECK(focusNode->komoProblem(specificBound) && focusNode->komoProblem(specificBound)->configurations.N, "level " <<specificBound <<" has not been computed for the current 'displayFocus'");
+  CHECK(focusNode->komoProblem(specificBound) && focusNode->komoProblem(specificBound)->pathConfig.frames.N, "level " <<specificBound <<" has not been computed for the current 'displayFocus'");
   if(specificBound<(int)views.N && views(specificBound)) {
-    renderConfigurations(focusNode->komoProblem(specificBound)->configurations, filePrefix, -2, 600, 600, &views(specificBound)->copy.gl().displayCamera());
+    NIY //renderConfigurations(focusNode->komoProblem(specificBound)->configurations, filePrefix, -2, 600, 600, &views(specificBound)->copy.gl()->displayCamera());
   } else {
-    renderConfigurations(focusNode->komoProblem(specificBound)->configurations, filePrefix, -2, 600, 600);
+    NIY //renderConfigurations(focusNode->komoProblem(specificBound)->configurations, filePrefix, -2, 600, 600);
   }
 }
 
@@ -199,12 +195,14 @@ void LGP_Tree::displayTreeUsingDot() {
 void LGP_Tree::updateDisplay() {
   if(fringe_solved.N) focusNode = fringe_solved.last();
 
+  if(!dth) initDisplay();
+
   //individual windows to display focusNode
   if(verbose>2) {
     rai::String decisions = focusNode->getTreePathString('\n');
     for(uint i=1; i<views.N; i++) {
-      if(focusNode->komoProblem(i) && focusNode->komoProblem(i)->configurations.N) {
-        views(i)->setConfigurations(focusNode->komoProblem(i)->configurations);
+      if(focusNode->komoProblem(i) && focusNode->komoProblem(i)->timeSlices.N) {
+        NIY//views(i)->setConfigurations(focusNode->komoProblem(i)->configurations);
         views(i)->text.clear() <<focusNode->cost <<"|  " <<focusNode->constraints.last() <<'\n' <<decisions;
       } else views(i)->clear();
     }
@@ -292,36 +290,36 @@ void LGP_Tree::inspectSequence(const rai::String& seq) {
   cout <<"### INSPECT SEQUENCE\n  " <<seq <<endl;
   cout <<"  Node Info:\n" <<node->getInfo() <<endl;
   auto S = node->getSkeleton();
-  writeSkeleton(cout, S, getSwitchesFromSkeleton(S));
+  writeSkeleton(cout, S, getSwitchesFromSkeleton(S, kin));
 
   ptr<OpenGL> gl = make_shared<OpenGL>();
   gl->camera.setDefault();
 
   //-- first test pose bounds along the path
   BoundType bound = BD_pose;
-  for(LGP_Node* n:path) {
-    n->optBound(bound, true, 2);
-    n->displayBound(gl, bound);
-  }
+//  for(LGP_Node* n:path) {
+//    n->optBound(bound, true, verbose-2);
+//    n->displayBound(gl, bound);
+//  }
 
-  bound = BD_poseFromSeq;
-  for(LGP_Node* n:path) {
-    n->optBound(bound, true, 2);
-    n->displayBound(gl, bound);
-  }
+//  bound = BD_poseFromSeq;
+//  for(LGP_Node* n:path) {
+//    n->optBound(bound, true, verbose-2);
+//    n->displayBound(gl, bound);
+//  }
 
   //-- sequence bound
   bound = BD_seq;
-  node->optBound(bound, true, 2);
+  node->optBound(bound, true, verbose-2);
   node->displayBound(gl, bound);
 
   //-- path bounds
   bound = BD_seqPath;
-  node->optBound(bound, true, 2);
+  node->optBound(bound, true, verbose-2);
   node->displayBound(gl, bound);
 
   bound = BD_path;
-  node->optBound(bound, true, 2);
+  node->optBound(bound, true, verbose-2);
   node->displayBound(gl, bound);
 }
 
@@ -558,7 +556,7 @@ void LGP_Tree::reportEffectiveJoints() {
   //  MNode *best = getBest();
   if(!focusNode->komoProblem.last()) return;
   focusNode->komoProblem.last()->reportProblem();
-  focusNode->komoProblem.last()->reportEffectiveJoints();
+  NIY//focusNode->komoProblem.last()->reportEffectiveJoints();
 }
 
 void LGP_Tree::step() {
@@ -629,16 +627,16 @@ void LGP_Tree::getSymbolicSolutions(uint depth) {
 void LGP_Tree::init() {
   fringe_expand.append(root);
   fringe_pose.append(root);
-  if(verbose>1) {
-    initDisplay();
-    updateDisplay();
-  }
+//  if(verbose>1) {
+//    initDisplay();
+//    updateDisplay();
+//  }
 }
 
 void LGP_Tree::run(uint steps) {
   init();
 
-  uint stopSol = rai::getParameter<uint>("LGP/stopSol", 12);
+  uint stopSol = rai::getParameter<double>("LGP/stopSol", 12);
   double stopTime = rai::getParameter<double>("LGP/stopTime", 400.);
 
   for(uint k=0; k<steps; k++) {
@@ -656,7 +654,7 @@ void LGP_Tree::run(uint steps) {
   output.close();
 
   //this generates the movie!
-  if(verbose>1) {
+  if(verbose>3) {
     //    renderToVideo();
     rai::system(STRING("mkdir -p " <<OptLGPDataPath <<"vid"));
     rai::system(STRING("rm -f " <<OptLGPDataPath <<"vid/*.ppm"));
@@ -687,10 +685,10 @@ LGP_Tree_SolutionData::LGP_Tree_SolutionData(LGP_Tree& _tree, LGP_Node* _node) :
   paths.resize(L);
   for(uint l=0; l<L; l++) {
     std::shared_ptr<KOMO> komo = node->komoProblem(l);
-    if(komo && komo->configurations.N) {
-      paths(l).resize(komo->configurations.N, frameIDs.N);
-      for(uint s=0; s<komo->configurations.N; s++) for(uint i=0; i<frameIDs.N; i++) {
-          paths(l)(s, i) = komo->configurations(s)->frames(frameIDs(i))->ensure_X();
+    if(komo && komo->timeSlices.N) {
+      paths(l).resize(komo->timeSlices.d0, frameIDs.N);
+      for(uint s=0; s<komo->timeSlices.d0; s++) for(uint i=0; i<frameIDs.N; i++) {
+          paths(l)(s, i) = komo->timeSlices(s, frameIDs(i))->ensure_X();
         }
     }
   }

@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -10,8 +10,8 @@
 
 //===========================================================================
 
-void F_Max::phi(arr& y, arr& J, const rai::Configuration& G) {
-  f->__phi(y, J, G);
+void F_Max::phi2(arr& y, arr& J,  const FrameL& F) {
+  f->eval(y, J, F);
   uint i=argmax(y);
   y = ARR(y(i));
   if(!!J) J=~J[i];
@@ -20,8 +20,8 @@ void F_Max::phi(arr& y, arr& J, const rai::Configuration& G) {
 
 //===========================================================================
 
-void F_Norm::phi(arr& y, arr& J, const rai::Configuration& G) {
-  f->__phi(y, J, G);
+void F_Norm::phi2(arr& y, arr& J,  const FrameL& F) {
+  f->eval(y, J, F);
   double l = sqrt(sumOfSqr(y));
   if(!!J) J = ~(y/l)*J;
   y = ARR(l);
@@ -29,7 +29,7 @@ void F_Norm::phi(arr& y, arr& J, const rai::Configuration& G) {
 
 //===========================================================================
 
-void F_Normalized::phi(arr& y, arr& J, const rai::Configuration& G) {
-  f->__phi(y, J, G);
+void F_Normalized::phi2(arr& y, arr& J,  const FrameL& F) {
+  f->eval(y, J, F);
   normalizeWithJac(y, J);
 }

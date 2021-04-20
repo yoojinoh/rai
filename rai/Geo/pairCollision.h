@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -24,7 +24,6 @@ struct PairCollision : GLDrawer, NonCopyable {
   arr normal;      ///< normal such that "<normal, p1-p2> = distance" is guaranteed (pointing from obj2 to obj1)
   arr simplex1;    ///< simplex on obj1 defining the collision geometry
   arr simplex2;    ///< simplex on obj2 defining the collision geometry
-//  arr dSimplex1, dSimplex2;
 
 //  arr m1, m2, eig1, eig2; ///< output of marginAnalysis: mean and eigenvalues of ALL point on the objs (not only simplex) that define the collision
 
@@ -33,6 +32,7 @@ struct PairCollision : GLDrawer, NonCopyable {
   PairCollision(const rai::Mesh& mesh1, const rai::Mesh& mesh2,
                 const rai::Transformation& t1, const rai::Transformation& t2,
                 double rad1=0., double rad2=0.);
+  PairCollision(ScalarFunction func1, ScalarFunction func2, const arr& seed);
   ~PairCollision() {}
 
   void write(std::ostream& os) const;

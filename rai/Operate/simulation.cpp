@@ -1,13 +1,13 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
     --------------------------------------------------------------  */
 
 #include "simulation.h"
-#include "splineRunner.h"
+#include "../Control/splineRunner.h"
 #include "../Algo/spline.h"
 #include "../Kin/kin_swift.h"
 #include "../Kin/proxy.h"
@@ -30,8 +30,8 @@ struct Simulation_self {
   rai::Configuration K_compute;
   OpenGL gl;
 
-  StringA currentlyUsedJoints; //the joints that the spline refers to
-  SplineRunner spline;
+  uintA currentlyUsedJoints; //the joints that the spline refers to
+  rai::SplineRunner spline;
   double dt; // time stepping interval
   uint stepCount=0; // number of simulation steps
 };
@@ -39,7 +39,7 @@ struct Simulation_self {
 Simulation::Simulation(const rai::Configuration& _K, double dt)
   : K(_K) {
   self = new Simulation_self;
-  setUsedRobotJoints(K.getJointNames());
+  setUsedRobotJoints(K.getJointIDs());
   self->dt = dt;
 
   self->gl.title = "Simulation";
@@ -91,7 +91,7 @@ void Simulation::stepKin() {
 
 }
 
-void Simulation::setJointState(const StringA& joints, const arr& q_ref) {
+void Simulation::setJointState(const uintA& joints, const arr& q_ref) {
   auto lock = self->threadLock(RAI_HERE);
 
   K.setJointState(q_ref, joints);
@@ -136,7 +136,7 @@ void Simulation::setJointStateSafe(arr q_ref, StringA& jointsInLimit, StringA& c
 
   arr y;
   double margin = .03;
-  KK.kinematicsProxyCost(y, NoArr, margin);
+  KK.kinematicsPenetration(y, NoArr, margin);
 
   for(rai::Proxy& p:KK.proxies) if(p.d<margin) {
       collisionPairs.append({p.a->name, p.b->name});
@@ -151,7 +151,7 @@ void Simulation::setJointStateSafe(arr q_ref, StringA& jointsInLimit, StringA& c
     arr y, J, JJ, invJ, I=eye(KK.q.N);
     KK.setJointState(q, self->currentlyUsedJoints);
     KK.stepSwift();
-    KK.kinematicsProxyCost(y, J, margin);
+    KK.kinematicsPenetration(y, J, margin);
 
     uint k;
     for(k=0; k<10; k++) {
@@ -171,7 +171,7 @@ void Simulation::setJointStateSafe(arr q_ref, StringA& jointsInLimit, StringA& c
 
       KK.setJointState(q, self->currentlyUsedJoints);
       KK.stepSwift();
-      KK.kinematicsProxyCost(y, J, margin);
+      KK.kinematicsPenetration(y, J, margin);
     }
 
     if(y.scalar()>1.) {
@@ -179,7 +179,7 @@ void Simulation::setJointStateSafe(arr q_ref, StringA& jointsInLimit, StringA& c
       q=q0;
       KK.setJointState(q, self->currentlyUsedJoints);
       KK.stepSwift();
-      KK.kinematicsProxyCost(y, J, margin);
+      KK.kinematicsPenetration(y, J, margin);
     }
 
     if(y.scalar()>1.) {
@@ -190,7 +190,7 @@ void Simulation::setJointStateSafe(arr q_ref, StringA& jointsInLimit, StringA& c
   K.setJointState(q, self->currentlyUsedJoints);
 }
 
-void Simulation::setUsedRobotJoints(const StringA& joints) {
+void Simulation::setUsedRobotJoints(const uintA& joints) {
   auto lock = self->threadLock(RAI_HERE);
 
   if(self->currentlyUsedJoints!=joints) {
@@ -221,12 +221,12 @@ void Simulation::exec(const StringA& command) {
 
   LOG(0) <<"CMD = " <<command <<endl;
   if(command(0)=="attach") {
-    rai::Frame* a = K.getFrameByName(command(1));
-    rai::Frame* b = K.getFrameByName(command(2));
+    rai::Frame* a = K.getFrame(command(1));
+    rai::Frame* b = K.getFrame(command(2));
     b = b->getUpwardLink();
 
     if(b->parent) b->unLink();
-    b->linkFrom(a, true);
+    b->setParent(a, true);
     (new rai::Joint(*b)) -> type=rai::JT_rigid;
     K.ensure_q();
   }
@@ -261,7 +261,7 @@ arr Simulation::getObjectPoses(const StringA& objects) {
     for(const rai::String& s:objects) objs.append(K[s]);
   } else { //non specified... go through the list and pick 'percets'
     for(rai::Frame* a:K.frames) {
-      if(a->ats["percept"]) objs.append(a);
+      if((*a->ats)["percept"]) objs.append(a);
     }
   }
 
@@ -281,7 +281,7 @@ StringA Simulation::getObjectNames() {
 
   StringA objs;
   for(rai::Frame* a:K.frames) {
-    if(a->ats["percept"]) objs.append(a->name);
+    if((*a->ats)["percept"]) objs.append(a->name);
   }
   return objs;
 }

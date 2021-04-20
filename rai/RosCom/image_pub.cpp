@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -116,7 +116,7 @@ ImagePublisher::~ImagePublisher() {
 }
 
 void ImagePublisher::publish(const rai::Array<unsigned char>& image, double timestamp) {
-  self->publish(image, timestamp);
+  s->publish(image, timestamp);
 }
 
 void init_image_publishers(int argc, char* argv[], const char* name, bool install_sigint_handler) {

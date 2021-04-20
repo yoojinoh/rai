@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -60,7 +60,7 @@ bool matchingFactsAreEqual(Graph& facts, Node* it1, Node* it2, const NodeL& subs
 
 void removeInfeasibleSymbolsFromDomain(Graph& facts, NodeL& domain, Node* literal, Graph* varScope);
 NodeL getSubstitutions2(Graph& KB, NodeL& relations, int verbose=0);
-NodeL getRuleSubstitutions2(Graph& KB, Node* rule, int verbose=0);
+NodeL getRuleSubstitutions2(Graph& KB, rai::Graph& rule, int verbose=0);
 bool substitutedRulePreconditionHolds(Graph& KB, Node* rule, const NodeL& subst, int verbose=0);
 
 //----------- adding facts

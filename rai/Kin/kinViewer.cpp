@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -18,7 +18,7 @@ KinViewer::KinViewer(const Var<rai::Configuration>& _kin, double beatIntervalSec
   : Thread("KinViewer", beatIntervalSec),
     world(this, _kin, (beatIntervalSec<0.)) {
   if(_cameraFrameName && strlen(_cameraFrameName)>0) {
-    cameraFrameID =  world.get()->getFrameByName(_cameraFrameName, true)->ID;
+    cameraFrameID =  world.get()->getFrame(_cameraFrameName, true)->ID;
   }
   if(beatIntervalSec>=0.) threadLoop(); else threadStep();
 }
@@ -37,11 +37,12 @@ void KinViewer::open() {
     rai::Frame* frame = world.get()->frames(cameraFrameID);
     double d;
     arr z;
-    if(frame->ats.get<double>(d, "focalLength")) gl->camera.setFocalLength(d);
-    if(frame->ats.get<arr>(z, "zrange")) gl->camera.setZRange(z(0), z(1));
+    CHECK(frame->ats, "");
+    if(frame->ats->get<double>(d, "focalLength")) gl->camera.setFocalLength(d);
+    if(frame->ats->get<arr>(z, "zrange")) gl->camera.setZRange(z(0), z(1));
     uint w=0, h=0;
-    if(frame->ats.get<double>(d, "width")) w = (uint)d;
-    if(frame->ats.get<double>(d, "height")) h = (uint)d;
+    if(frame->ats->get<double>(d, "width")) w = (uint)d;
+    if(frame->ats->get<double>(d, "height")) h = (uint)d;
     if(w && h) {
       gl->resize(w, h);
       gl->camera.setWHRatio((double)w/h);
@@ -144,7 +145,7 @@ void KinPathViewer::step() {
     copy.checkConsistency();
   }
   if(T) {
-    copy.orsDrawMarkers=false;
+//    copy.orsDrawMarkers=false;
     gl->update(STRING("(time " <<tprefix+int(tt) <<'/' <<tprefix+int(T) <<")\n" <<text).p, true); //, false, false, true);
     if(writeToFiles) write_ppm(gl->captureImage, STRING("vid/"<<std::setw(4)<<std::setfill('0')<<tprefix+int(tt)<<".ppm"));
   }
@@ -155,12 +156,12 @@ void KinPathViewer::step() {
 
 void renderConfigurations(const ConfigurationL& cs, const char* filePrefix, int tprefix, int w, int h, rai::Camera* camera) {
   rai::Configuration copy;
-  copy.orsDrawMarkers=false;
   rai::system(STRING("mkdir -p " <<filePrefix));
   rai::system(STRING("rm -f " <<filePrefix <<"*.ppm"));
   OpenGL gl("RenderConfiguration", w, h, true);
   gl.add(glStandardScene, 0);
   gl.add(copy);
+  gl.drawOptions.drawVisualsOnly=true;
   if(camera) {
     gl.camera = *camera;
   } else {
@@ -284,15 +285,15 @@ void ComputeCameraView::close() {
 
 void ComputeCameraView::step() {
   copy = modelWorld.get();
-  copy.orsDrawJoints = copy.orsDrawMarkers = copy.orsDrawProxies = false;
 
-  rai::Frame* kinectShape = copy.getFrameByName("endeffKinect");
+  rai::Frame* kinectShape = copy.getFrame("endeffKinect");
   if(kinectShape) { //otherwise 'copy' is not up-to-date yet
     {
       auto _dataLock = gl.dataLock(RAI_HERE);
       gl.camera.setKinect();
       gl.camera.X = kinectShape->ensure_X() * gl.camera.X;
     }
+    gl.drawOptions.drawVisualsOnly=true;
     gl.renderInBack(640, 480);
     flip_image(gl.captureImage);
     flip_image(gl.captureDepth);

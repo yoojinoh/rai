@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -159,6 +159,8 @@ struct Quaternion {
   arr getJacobian() const;
   arr getMatrixJacobian() const;
 
+  arr getQuaternionMultiplicationMatrix() const; //turns a RHS(!) quat multiplication into a LHS(!) matrix multiplication
+
   void writeNice(std::ostream& os) const;
   void write(std::ostream& os) const;
   void read(std::istream& is);
@@ -175,7 +177,10 @@ struct Transformation {
   Transformation(const Transformation& t) : pos(t.pos), rot(t.rot) {}
   Transformation(const char* init) { setText(init); }
   Transformation(const arr& t) { set(t); }
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wclass-memaccess"
   void operator=(const Transformation& f) { memcpy(this, &f, sizeof(Transformation)); }
+#pragma GCC diagnostic pop
   bool operator!() const;
 
   Transformation& setZero();
@@ -350,6 +355,7 @@ bool    operator!=(const Matrix&, const Matrix&);
 Quaternion operator-(const Quaternion&);
 Quaternion operator*(const Quaternion& b, const Quaternion& c);
 Quaternion operator/(const Quaternion& b, const Quaternion& c);
+Quaternion operator*=(Quaternion&, double);
 bool       operator==(const Quaternion&, const Quaternion&);
 bool       operator!=(const Quaternion&, const Quaternion&);
 Quaternion operator-(const Quaternion&, const Quaternion&);

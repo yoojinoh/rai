@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -16,15 +16,15 @@
 //===========================================================================
 
 namespace rai {
-  struct Node;
-  template<class T> struct Node_typed;
-  template<class T> struct ArrayG;
-  struct Graph;
-  struct ParseInfo;
-  struct RenderingInfo;
-  struct GraphEditCallback;
-  typedef Array<Node*> NodeL;
-  typedef Array<GraphEditCallback*> GraphEditCallbackL;
+struct Node;
+template<class T> struct Node_typed;
+template<class T> struct ArrayG;
+struct Graph;
+struct ParseInfo;
+struct RenderingInfo;
+struct GraphEditCallback;
+typedef Array<Node*> NodeL;
+typedef Array<GraphEditCallback*> GraphEditCallbackL;
 }
 extern rai::NodeL& NoNodeL; //this is a reference to nullptr! (for optional arguments)
 extern rai::Graph& NoGraph; //this is a reference to nullptr! (for optional arguments)
@@ -44,7 +44,7 @@ struct Node {
   Node(const std::type_info& _type, Graph& _container, const char* _key, const NodeL& _parents);
   virtual ~Node();
 
-  void addParent(Node* p);
+  void addParent(Node* p, bool prepend=false);
   void removeParent(Node* p);
   void swapParent(uint i, Node* p);
 
@@ -53,8 +53,8 @@ struct Node {
   template<class T> T* getValue();    ///< query whether node type is equal to (or derived from) T, return the value if so
   template<class T> const T* getValue() const; ///< as above
   template<class T> std::shared_ptr<T> getPtr() const;  ///< query whether node type is equal to (or derived from) shared_ptr<T>, return the shared_ptr if so
-  template<class T> T& get() { T* x=getValue<T>(); CHECK(x, "this node is not of type '" <<typeid(T).name() <<"' but type '" <<type.name() <<"'"); return *x; }
-  template<class T> const T& get() const { const T* x=getValue<T>(); CHECK(x, "this node is not of type '" <<typeid(T).name() <<"' but type '" <<type.name() <<"'"); return *x; }
+  template<class T> T& get() { T* x=getValue<T>(); CHECK(x, "this node '" <<*this <<"' is not of type '" <<typeid(T).name() <<"' but type '" <<type.name() <<"'"); return *x; }
+  template<class T> const T& get() const { const T* x=getValue<T>(); CHECK(x, "this node '" <<*this <<"'is not of type '" <<typeid(T).name() <<"' but type '" <<type.name() <<"'"); return *x; }
   template<class T> bool getFromString(T& x) const; ///< return value = false means parsing object of type T from the string failed
   template<class T> bool getFromArr(T& x) const; ///< return value = false means parsing object of type T from the string failed
   bool isBoolAndTrue() const { if(type!=typeid(bool)) return false; return *getValue<bool>() == true; }
@@ -315,8 +315,9 @@ stdOutPipe(RenderingInfo)
 
 //===========================================================================
 
-/// global registry of anything using a singleton Graph
-extern Singleton<rai::Graph> registry;
+/// global registry of parameters (taken from cmd line or file) as a singleton graph
+Mutex::TypedToken<rai::Graph> getParameters();
+void initParameters(int _argc, char* _argv[]);
 
 //===========================================================================
 
@@ -333,7 +334,7 @@ typedef rai::Array<std::shared_ptr<Type>> TypeInfoL;
 //===========================================================================
 //===========================================================================
 //
-// definition of template methods - could move this to graph.tpp
+// definition of template methods - could move this to graph.ipp
 //
 //===========================================================================
 //===========================================================================

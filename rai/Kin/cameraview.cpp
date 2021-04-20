@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -22,7 +22,7 @@ rai::CameraView::CameraView(const rai::Configuration& _C, bool _offscreen, int _
 rai::CameraView::Sensor& rai::CameraView::addSensor(const char* name, const char* frameAttached, uint width, uint height, double focalLength, double orthoAbsHeight, const arr& zRange, const char* backgroundImageFile) {
   Sensor& sen = sensors.append();
   sen.name = name;
-  sen.frame = C.getFrameByName(frameAttached)->ID;
+  sen.frame = C.getFrame(frameAttached)->ID;
   rai::Camera& cam = sen.cam;
   sen.width=width;
   sen.height=height;
@@ -34,7 +34,7 @@ rai::CameraView::Sensor& rai::CameraView::addSensor(const char* name, const char
 
   cam.setWHRatio((double)width/height);
 
-  if(sen.frame>=0) cam.X = C.frames(sen.frame)->ensure_X();
+  if(sen.frame>=0) cam.X = C.frames.elem(sen.frame)->ensure_X();
 
   //also select sensor
   gl.resize(sen.width, sen.height);
@@ -45,7 +45,7 @@ rai::CameraView::Sensor& rai::CameraView::addSensor(const char* name, const char
 }
 
 rai::CameraView::Sensor& rai::CameraView::addSensor(const char* frameAttached) {
-  rai::Frame* frame = C.getFrameByName(frameAttached);
+  rai::Frame* frame = C.getFrame(frameAttached);
 
   CHECK(frame, "frame '" <<frameAttached <<"' is not defined");
 
@@ -54,11 +54,12 @@ rai::CameraView::Sensor& rai::CameraView::addSensor(const char* frameAttached) {
   double orthoAbsHeight=-1.;
   arr zRange;
 
-  frame->ats.get<double>(focalLength, "focalLength");
-  frame->ats.get<double>(orthoAbsHeight, "orthoAbsHeight");
-  frame->ats.get<arr>(zRange, "zRange");
-  frame->ats.get<double>(width, "width");
-  frame->ats.get<double>(height, "height");
+  CHECK(frame->ats, "");
+  frame->ats->get<double>(focalLength, "focalLength");
+  frame->ats->get<double>(orthoAbsHeight, "orthoAbsHeight");
+  frame->ats->get<arr>(zRange, "zRange");
+  frame->ats->get<double>(width, "width");
+  frame->ats->get<double>(height, "height");
 
   return addSensor(frameAttached, frameAttached, width, height, focalLength, orthoAbsHeight, zRange);
 }
@@ -90,7 +91,7 @@ void rai::CameraView::updateConfiguration(const rai::Configuration& newC) {
     if(renderMode==seg) { //update frameIDmap
       frameIDmap.resize(C.frames.N).setZero();
       for(rai::Frame* f:C.frames) {
-        int* label=f->ats.find<int>("label");
+        int* label=f->ats->find<int>("label");
         if(label) frameIDmap(f->ID) = *label;
       }
     }
@@ -100,7 +101,8 @@ void rai::CameraView::updateConfiguration(const rai::Configuration& newC) {
 void rai::CameraView::computeImageAndDepth(byteA& image, floatA& depth) {
   updateCamera();
   //  renderMode=all;
-  gl.update(nullptr, true);
+  // gl.update(nullptr, true);
+  gl.renderInBack();
   image = gl.captureImage;
   flip_image(image);
   if(renderMode==seg && frameIDmap.N) {
@@ -182,7 +184,7 @@ void rai::CameraView::watch_PCL(const arr& pts, const byteA& rgb) {
 
 void rai::CameraView::updateCamera() {
   for(Sensor& sen:sensors) {
-    if(sen.frame>=0) sen.cam.X = C.frames(sen.frame)->ensure_X();
+    if(sen.frame>=0) sen.cam.X = C.frames.elem(sen.frame)->ensure_X();
   }
 
   if(currentSensor) {
@@ -195,13 +197,11 @@ void rai::CameraView::updateCamera() {
 void rai::CameraView::glDraw(OpenGL& gl) {
   if(renderMode==all || renderMode==visuals) {
     glStandardScene(nullptr, gl);
-    gl.drawMode_idColor = false;
+    gl.drawOptions.drawMode_idColor = false;
     if(renderMode==visuals) {
-      C.orsDrawVisualsOnly=true;
-      C.orsDrawMarkers = false;
+      gl.drawOptions.drawVisualsOnly=true;
     } else {
-      C.orsDrawVisualsOnly=false;
-      C.orsDrawMarkers = true;
+      gl.drawOptions.drawVisualsOnly=false;
     }
 
     C.glDraw(gl);
@@ -217,11 +217,10 @@ void rai::CameraView::glDraw(OpenGL& gl) {
   if(renderMode==seg) {
     gl.setClearColors(1, 1, 1, 0);
     gl.background.clear();
-    gl.drawMode_idColor = true;
-    C.orsDrawMarkers = false;
-    C.orsDrawVisualsOnly=true;
+    gl.drawOptions.drawMode_idColor = true;
+    gl.drawOptions.drawVisualsOnly=true;
     C.glDraw(gl);
-    gl.drawMode_idColor = false;
+    gl.drawOptions.drawMode_idColor = false;
   }
 }
 

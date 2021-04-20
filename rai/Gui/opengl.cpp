@@ -1,19 +1,29 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
     --------------------------------------------------------------  */
 
 #ifdef RAI_GL
-#  include <GL/glew.h>
-#  include <GL/glx.h>
+#  ifndef RAI_MSVC
+#    include <GL/glew.h>
+#    include <GL/glx.h>
+#  else
+#    include <windows.h>
+#    undef min
+#    undef max
+#    include <GL/glew.h>
+#    include <GL/glut.h>
+#  endif
 #  undef Success
 #endif
+
 #include "opengl.h"
-#include "../Core/array.tpp"
+#include "../Core/array.ipp"
 #include "../Geo/geo.h"
+
 #ifdef RAI_GLFW
 #  include <GLFW/glfw3.h>
 #endif
@@ -25,18 +35,11 @@
 
 OpenGL& NoOpenGL = *((OpenGL*)(nullptr));
 
+OpenGLDrawOptions& GLDrawer::glDrawOptions(OpenGL& gl){ return gl.drawOptions; }
+
 //===========================================================================
 
 Singleton<SingleGLAccess> singleGLAccess;
-
-bool disableGui() {
-  static int _disableGui = -1;
-  if(_disableGui==-1){
-    if(rai::checkParameter<bool>("disableGui")) _disableGui = 1;
-    else _disableGui = 0;
-  }
-  return _disableGui==1;
-}
 
 //===========================================================================
 
@@ -264,6 +267,8 @@ struct GlfwSpinner : Thread {
   Mutex mutex;
 
   GlfwSpinner() : Thread("GlfwSpinnerSpinner", .01) {
+    if(rai::getDisableGui()){ HALT("you must not be here with -disableGui"); }
+
     glfwSetErrorCallback(error_callback);
     if(!glfwInit()) exit(EXIT_FAILURE);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
@@ -273,7 +278,7 @@ struct GlfwSpinner : Thread {
     char* argv[1]= {(char*)"x"};
     glutInit(&argc, argv);
 
-    threadLoop();
+    threadLoop(true);
   }
   ~GlfwSpinner() {
     threadClose();
@@ -287,7 +292,7 @@ struct GlfwSpinner : Thread {
 //    cout <<"HERE" <<count++;
     mutex.lock(RAI_HERE);
     glfwPollEvents();
-    for(OpenGL* gl: glwins) if(gl->self && gl->self->window && gl->self->needsRedraw) {
+    for(OpenGL* gl: glwins) if(gl->self && !gl->offscreen && gl->self->window && gl->self->needsRedraw) {
         gl->isUpdating.setStatus(1);
 
         glfwMakeContextCurrent(gl->self->window);
@@ -304,7 +309,7 @@ struct GlfwSpinner : Thread {
   void close() {}
 
   void addGL(OpenGL* gl) {
-    bool start=false;
+//    bool start=false;
     mutex.lock(RAI_HERE);
     glwins.append(gl);
 #if 0
@@ -315,20 +320,20 @@ struct GlfwSpinner : Thread {
     glfwSwapBuffers(gl->self->window);
     glfwMakeContextCurrent(nullptr);
 #endif
-    if(glwins.N==1) start=true; //start looping
+//    if(glwins.N==1) start=true; //start looping
     mutex.unlock();
 
-    if(start) threadLoop(); //start looping
+//    if(start) threadLoop(true); //start looping
   }
 
   void delGL(OpenGL* gl) {
-    bool stop=false;
+//    bool stop=false;
     mutex.lock(RAI_HERE);
     glwins.removeValue(gl);
-    if(!glwins.N) stop=true; //stop looping
+//    if(!glwins.N) stop=true; //stop looping
     mutex.unlock();
 
-    if(stop) threadStop(); //stop looping
+//    if(stop) threadStop(); //stop looping
   }
 
   static void error_callback(int error, const char* description) {
@@ -365,10 +370,13 @@ struct GlfwSpinner : Thread {
   }
 
   static void _Close(GLFWwindow* window) {
-    OpenGL* gl=(OpenGL*)glfwGetWindowUserPointer(window);
+//    OpenGL* gl=(OpenGL*)glfwGetWindowUserPointer(window);
+//    LOG(-1) <<"closing window";
 //      if (!time_to_close)
 //    OpenGL *gl=(OpenGL*)glfwSetWindowShouldClose(window, GLFW_FALSE);
-    gl->WindowStatus(0);
+//    gl->WindowStatus(0);
+    glfwHideWindow(window);
+//    gl->closeWindow();
   }
 
   static void _Scroll(GLFWwindow* window, double xoffset, double yoffset) {
@@ -376,6 +384,10 @@ struct GlfwSpinner : Thread {
     gl->Scroll(0, yoffset);
   }
 
+  static void _Refresh(GLFWwindow* window){
+    OpenGL* gl=(OpenGL*)glfwGetWindowUserPointer(window);
+    gl->postRedrawEvent(true);
+  }
 };
 
 static GlfwSpinner* singletonGlSpinner() {
@@ -384,39 +396,53 @@ static GlfwSpinner* singletonGlSpinner() {
 }
 
 void OpenGL::openWindow() {
-  if(disableGui()) return;
+  if(rai::getDisableGui()) return;
 
   if(!self->window) {
     auto fg = singletonGlSpinner();
     fg->mutex.lock(RAI_HERE);
 
     if(offscreen) {
+//      glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_NATIVE_CONTEXT_API);
+//      glfwWindowHint(GLFW_CONTEXT_ROBUSTNESS, GLFW_NO_ROBUSTNESS);
+//      glfwWindowHintString()
+//      glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
+//      glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // To make MacOS happy; should not be needed
+//      glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
       glfwWindowHint(GLFW_VISIBLE, GL_FALSE);
+//      glfwWindowHint(GLFW_VISIBLE, GL_TRUE);
     } else {
       glfwWindowHint(GLFW_VISIBLE, GL_TRUE);
     }
     if(!title.N) title="GLFW window";
     self->window = glfwCreateWindow(width, height, title.p, nullptr, nullptr);
-    glfwMakeContextCurrent(self->window);
-    glfwSetWindowUserPointer(self->window, this);
-    glfwSetMouseButtonCallback(self->window, GlfwSpinner::_MouseButton);
-    glfwSetCursorPosCallback(self->window, GlfwSpinner::_MouseMotion);
-    glfwSetKeyCallback(self->window, GlfwSpinner::_Key);
-    glfwSetScrollCallback(self->window, GlfwSpinner::_Scroll);
-    glfwSetWindowSizeCallback(self->window, GlfwSpinner::_Resize);
-    glfwSetWindowCloseCallback(self->window, GlfwSpinner::_Close);
+    if(!offscreen){
+      glfwMakeContextCurrent(self->window);
+      glfwSetWindowUserPointer(self->window, this);
+      glfwSetMouseButtonCallback(self->window, GlfwSpinner::_MouseButton);
+      glfwSetCursorPosCallback(self->window, GlfwSpinner::_MouseMotion);
+      glfwSetKeyCallback(self->window, GlfwSpinner::_Key);
+      glfwSetScrollCallback(self->window, GlfwSpinner::_Scroll);
+      glfwSetWindowSizeCallback(self->window, GlfwSpinner::_Resize);
+      glfwSetWindowCloseCallback(self->window, GlfwSpinner::_Close);
+      glfwSetWindowRefreshCallback(self->window, GlfwSpinner::_Refresh);
+ 
+      glfwSwapInterval(1);
+      glfwMakeContextCurrent(nullptr);
+    }
 
-    glfwSwapInterval(1);
-    glfwMakeContextCurrent(nullptr);
     fg->mutex.unlock();
 
     fg->addGL(this);
+  }else{
+    //glfwShowWindow(self->window);
   }
 }
 
 void OpenGL::closeWindow() {
   self->needsRedraw=0;
   if(self->window) {
+    singletonGlSpinner()->delGL(this);
     {
       auto fg = singletonGlSpinner();
       fg->mutex.lock(RAI_HERE);
@@ -425,7 +451,12 @@ void OpenGL::closeWindow() {
       isUpdating.setStatus(0);
       watching.setStatus(0);
     }
-    singletonGlSpinner()->delGL(this);
+  }
+}
+
+void OpenGL::raiseWindow(){
+  if(self->window) {
+    glfwFocusWindow(self->window);
   }
 }
 
@@ -436,20 +467,20 @@ void OpenGL::setTitle(const char* _title) {
   }
 }
 
-void OpenGL::beginNonThreadedDraw() {
-  if(disableGui()) return;
+void OpenGL::beginNonThreadedDraw(bool fromWithinCallback) {
+  if(rai::getDisableGui()) return;
   openWindow();
   auto fg = singletonGlSpinner();
-  fg->mutex.lock(RAI_HERE);
+  if(!fromWithinCallback) fg->mutex.lock(RAI_HERE);
   glfwMakeContextCurrent(self->window);
 }
 
-void OpenGL::endNonThreadedDraw() {
-  if(disableGui()) return;
+void OpenGL::endNonThreadedDraw(bool fromWithinCallback) {
+  if(rai::getDisableGui()) return;
   auto fg = singletonGlSpinner();
   glfwSwapBuffers(self->window);
   glfwMakeContextCurrent(nullptr);
-  fg->mutex.unlock();
+  if(!fromWithinCallback) fg->mutex.unlock();
 }
 
 void OpenGL::postRedrawEvent(bool fromWithinCallback) {
@@ -543,9 +574,9 @@ void glStandardLight(void*, OpenGL&) {
 void glStandardScene(void*, OpenGL& gl) {
   glPushAttrib(GL_CURRENT_BIT);
   glStandardLight(nullptr, gl);
-  //  glDrawFloor(10, .8, .8, .8);
-  //  glDrawFloor(10, 1.5, 0.83, .0);
-  glDrawFloor(10., 108./255., 123./255., 139./255.);
+  glDrawFloor(10, .5, .55, .6);
+  // glDrawFloor(10, 1.5, 0.83, .0);
+  // glDrawFloor(10., 108./255., 123./255., 139./255.);
   glDrawAxes(.1);
   glPopAttrib();
 }
@@ -598,14 +629,12 @@ void glColorId(uint id) {
   glColor3ubv(rgb);
 }
 
-extern bool Geo_mesh_drawColors;
-
 void OpenGL::drawId(uint id) {
-  if(drawMode_idColor) {
+  if(drawOptions.drawMode_idColor) {
     glColorId(id);
-    Geo_mesh_drawColors=false;
+    drawOptions.drawColors=false;
   } else {
-    Geo_mesh_drawColors=true;
+    drawOptions.drawColors=true;
   }
 }
 
@@ -947,7 +976,7 @@ void glDrawDisk(float radius) {
   gluDeleteQuadric(style);
 }
 
-void glDrawProxy(const arr& p1, const arr& p2, double diskSize, int colorCode, const arr& norm, double rad1, double rad2) {
+void glDrawProxy(const arr& p1, const arr& p2, double diskSize, int colorCode, const arr& norm, double _rad1, double _rad2) {
   glLoadIdentity();
   if(!colorCode) glColor(.8, .2, .2);
   else glColor(colorCode);
@@ -975,13 +1004,13 @@ void glDrawProxy(const arr& p1, const arr& p2, double diskSize, int colorCode, c
   glEnable(GL_CULL_FACE);
 
   glLoadIdentity();
-  if(!!norm && rad1>0.) {
-    arr p = p1 - rad1*norm;
+  if(!!norm && _rad1>0.) {
+    arr p = p1 - _rad1*norm;
     glColor(0., 1., 0., 1.);
     glDrawDiamond(p(0), p(1), p(2), .01, .01, .01);
   }
-  if(!!norm && rad1>0.) {
-    arr p = p2 + rad2*norm;
+  if(!!norm && _rad1>0.) {
+    arr p = p2 + _rad2*norm;
     glColor(0., 0., 1., 1.);
     glDrawDiamond(p(0), p(1), p(2), .01, .01, .01);
   }
@@ -1541,7 +1570,7 @@ OpenGL* OpenGL::newClone() const {
 void OpenGL::init() {
   drawFocus=false;
   clearR=clearG=clearB=1.; clearA=0.;
-  drawers.memMove=true;
+  pressedkey=0;
   mouseposx=mouseposy=0;
   mouse_button=0;
   mouseIsDown=false;
@@ -1666,7 +1695,7 @@ void OpenGL::clear() {
 }
 
 void OpenGL::Draw(int w, int h, rai::Camera* cam, bool callerHasAlreadyLocked) {
-  if(disableGui()) HALT("you should not be here!");
+  if(rai::getDisableGui()) HALT("you should not be here!");
 
 #ifdef RAI_GL
   if(!callerHasAlreadyLocked) {
@@ -1696,6 +1725,8 @@ void OpenGL::Draw(int w, int h, rai::Camera* cam, bool callerHasAlreadyLocked) {
   glEnable(GL_BLEND);  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   glEnable(GL_CULL_FACE);  glFrontFace(GL_CCW);
   glShadeModel(GL_FLAT);  //glShadeModel(GL_SMOOTH);
+
+  if(drawOptions.pclPointSize>0.) glPointSize(drawOptions.pclPointSize);
 
   //select mode?
   GLint mode;
@@ -1829,7 +1860,9 @@ void OpenGL::Draw(int w, int h, rai::Camera* cam, bool callerHasAlreadyLocked) {
   //check matrix stack
   GLint s;
   glGetIntegerv(GL_MODELVIEW_STACK_DEPTH, &s);
-  if(s!=1) RAI_MSG("OpenGL name stack has not depth 1 (pushs>pops) in DRAW mode:" <<s);
+  if(s!=1){
+    RAI_MSG("OpenGL name stack has not depth 1 (pushs>pops) in DRAW mode:" <<s);
+  }
   //CHECK_LE(s, 1, "OpenGL matrix stack has not depth 1 (pushs>pops)");
 
   if(!callerHasAlreadyLocked) {
@@ -1934,13 +1967,13 @@ void OpenGL::Select(bool callerHasAlreadyLocked) {
 /** @brief watch in interactive mode and wait for an exiting event
   (key pressed or right mouse) */
 int OpenGL::watch(const char* txt) {
-  if(disableGui()) return 27; //ESC key
+  if(rai::getDisableGui()) return 27; //ESC key
   if(offscreen) {
     LOG(0) <<"can't watch an offscreen context";
     return 'q';
   }
 #ifdef RAI_GL
-  update(STRING(txt<<" - press ENTER to continue"), true);
+  update((txt?STRING(txt <<" - press ENTER to continue"):0), true);
   if(rai::getInteractivity()) {
     watching.setStatus(1);
     watching.waitForStatusEq(0);
@@ -1953,7 +1986,7 @@ int OpenGL::watch(const char* txt) {
 
 /// update the view (in Qt: also starts displaying the window)
 int OpenGL::update(const char* txt, bool nonThreaded) {
-  if(disableGui()) return 27; //ESC key
+  if(rai::getDisableGui()) return 27; //ESC key
   openWindow();
   if(txt) text.clear() <<txt;
 #ifdef RAI_GL
@@ -1972,7 +2005,10 @@ int OpenGL::update(const char* txt, bool nonThreaded) {
   }
 #endif
 #endif
-  return pressedkey;
+  int key=pressedkey;
+  pressedkey=0;
+//  if(key) LOG(0) <<"KEY! " <<key;
+  return key;
 }
 
 /// waits some msecons before updating
@@ -2215,7 +2251,7 @@ void OpenGL::MouseButton(int button, int downPressed, int _x, int _y, int mods) 
   if(mouse_button==1 && (mods&2)) {
     drawFocus = false;
     if(!downPressed) {
-      drawMode_idColor = true;
+      drawOptions.drawMode_idColor = true;
       Draw(w, h, nullptr, true);
       double x=mouseposx, y=mouseposy, d = captureDepth(mouseposy, mouseposx);
       if(d<.01 || d==1.) {
@@ -2227,7 +2263,7 @@ void OpenGL::MouseButton(int button, int downPressed, int _x, int _y, int mods) 
            <<" point: (" <<x <<' ' <<y <<' ' <<d <<")" <<endl;
     }
   } else {
-    drawMode_idColor = false;
+    drawOptions.drawMode_idColor = false;
   }
 
   //mouse scroll wheel:
@@ -2343,7 +2379,7 @@ void OpenGL::MouseMotion(int _x, int _y) {
 //
 
 struct XBackgroundContext {
-#ifdef RAI_GL
+#if defined(RAI_GL) && defined(RAI_X11)
   typedef Bool(*glXMakeContextCurrentARBProc)(Display*, GLXDrawable, GLXDrawable, GLXContext);
   typedef GLXContext(*glXCreateContextAttribsARBProc)(Display*, GLXFBConfig, GLXContext, Bool, const int*);
 
@@ -2418,28 +2454,16 @@ struct XBackgroundContext {
 Singleton<XBackgroundContext> xBackgroundContext;
 
 void OpenGL::renderInBack(int w, int h) {
-#ifdef RAI_GLFW
-  LOG(-3) <<"NO! do this with offscreen window";
-  return;
-#endif
+  beginNonThreadedDraw();
 
 #ifdef RAI_GL
   if(w<0) w=width;
   if(h<0) h=height;
 
-//  singletonGlSpinner(); //ensure that glut is initialized (if the drawer called glut)
-
-//  auto mut=singleGLAccess();
-//  auto _dataLock = dataLock(RAI_HERE);
-//  xBackgroundContext()->makeCurrent();
-
   CHECK_EQ(w%4, 0, "should be devidable by 4!!");
 
-  isUpdating.waitForStatusEq(0);
-  isUpdating.setStatus(1);
-
   if(!rboColor || !rboDepth) { //need to initialize
-//    glewInit();
+    glewInit();
     glGenRenderbuffers(1, &rboColor);  // Create a new renderbuffer unique name.
     glBindRenderbuffer(GL_RENDERBUFFER, rboColor);  // Set it as the current.
     glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, w, h); // Sets storage type for currently bound renderbuffer.
@@ -2510,25 +2534,12 @@ void OpenGL::renderInBack(int w, int h) {
   }
 
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fboId);
-
-  //-- draw!
   Draw(w, h, nullptr, true);
   glFlush();
-
-  //-- read
-  captureImage.resize(h, w, 3);
-  glReadBuffer(GL_COLOR_ATTACHMENT0);
-  glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, captureImage.p);
-
-  captureDepth.resize(h, w);
-  glReadBuffer(GL_DEPTH_ATTACHMENT);
-  glReadPixels(0, 0, w, h, GL_DEPTH_COMPONENT, GL_FLOAT, captureDepth.p);
-
-  // Return to onscreen rendering:
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-
-  isUpdating.setStatus(0);
 #endif
+
+  endNonThreadedDraw();
 }
 
 //===========================================================================

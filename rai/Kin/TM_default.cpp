@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -55,8 +55,8 @@ TM_Default::TM_Default(const rai::Graph& specs, const rai::Configuration& G)
   else if(Type=="vecAlign") type=TMT_vecAlign;
   else if(Type=="gazeAt") type=TMT_gazeAt;
   else HALT("unknown type " <<Type);
-  if((it=specs["sym2"]) || (it=specs["ref1"])) { auto name=it->get<rai::String>(); auto* s=G.getFrameByName(name); CHECK(s, "shape name '" <<name <<"' does not exist"); i=s->ID; }
-  if((it=specs["sym3"]) || (it=specs["ref2"])) { auto name=it->get<rai::String>(); auto* s=G.getFrameByName(name); CHECK(s, "shape name '" <<name <<"' does not exist"); j=s->ID; }
+  if((it=specs["sym2"]) || (it=specs["ref1"])) { auto name=it->get<rai::String>(); auto* s=G.getFrame(name); CHECK(s, "shape name '" <<name <<"' does not exist"); i=s->ID; }
+  if((it=specs["sym3"]) || (it=specs["ref2"])) { auto name=it->get<rai::String>(); auto* s=G.getFrame(name); CHECK(s, "shape name '" <<name <<"' does not exist"); j=s->ID; }
   if((it=specs["vec1"])) ivec = rai::Vector(it->get<arr>());  else ivec.setZero();
   if((it=specs["vec2"])) jvec = rai::Vector(it->get<arr>());  else jvec.setZero();
   if(type==TMT_quat) flipTargetSignOnNegScalarProduct=true;
@@ -79,8 +79,8 @@ TM_Default::TM_Default(const rai::Node* specs, const rai::Configuration& G)
   else if(Type=="vecAlign") type=TMT_vecAlign;
   else if(Type=="gazeAt") type=TMT_gazeAt;
   else HALT("unknown type " <<Type);
-  if(ref1) { rai::Frame* s=G.getFrameByName(ref1); CHECK(s, "shape name '" <<ref1 <<"' does not exist"); i=s->ID; }
-  if(ref2) { rai::Frame* s=G.getFrameByName(ref2); CHECK(s, "shape name '" <<ref2 <<"' does not exist"); j=s->ID; }
+  if(ref1) { rai::Frame* s=G.getFrame(ref1); CHECK(s, "shape name '" <<ref1 <<"' does not exist"); i=s->ID; }
+  if(ref2) { rai::Frame* s=G.getFrame(ref2); CHECK(s, "shape name '" <<ref2 <<"' does not exist"); j=s->ID; }
   if(specs->isGraph()) {
     const rai::Graph& params = specs->graph();
     rai::Node* it;
@@ -105,7 +105,8 @@ void TM_Default::phi(arr& y, arr& J, const rai::Configuration& C) {
       C.kinematicsPos(y, J, a, vec_i);
       y -= conv_vec2arr(vec_j);
     } else {
-      C.kinematicsRelPos(y, J, a, vec_i, b, vec_j);
+      HALT("use F_PositionRel!")
+//      C.kinematicsRelPos(y, J, a, vec_i, b, vec_j);
     }
     return;
   }
@@ -118,7 +119,7 @@ void TM_Default::phi(arr& y, arr& J, const rai::Configuration& C) {
       y -= conv_vec2arr(vec_j);
     } else {
       arr y2, J2;
-      C.kinematicsPos(y2, (!!J?J2:NoArr), b, vec_j);
+      C.kinematicsPos(y2, J2, b, vec_j);
       y -= y2;
       if(!!J) J -= J2;
     }
@@ -179,7 +180,7 @@ void TM_Default::phi(arr& y, arr& J, const rai::Configuration& C) {
     y(0) = scalarProduct(zi, zj);
     if(!!J) {
       J = ~zj * Ji + ~zi * Jj;
-      J.reshape(1, C.getJointStateDimension());
+//      J.reshape(1, C.getJointStateDimension());
     }
     return;
   }
@@ -232,7 +233,7 @@ void TM_Default::phi(arr& y, arr& J, const rai::Configuration& C) {
   if(type==TMT_quat) {
     if(b==nullptr) { //simple, no j reference
       C.kinematicsQuat(y, J, a);
-    }else{
+    } else {
       arr qa, qb, Ja, Jb;
       C.kinematicsQuat(qb, Jb, a);
       C.kinematicsQuat(qa, Ja, b);
@@ -243,10 +244,8 @@ void TM_Default::phi(arr& y, arr& J, const rai::Configuration& C) {
       quat_concat(y, Jya, Jyb, ainv, qb);
       if(qa(0)!=1.) for(uint i=0; i<Jya.d0; i++) Jya(i, 0) *= -1.;
 
-      if(!!J) {
-        J = Jya * Ja + Jyb * Jb;
-        checkNan(J);
-      }
+      J = Jya * Ja + Jyb * Jb;
+      checkNan(J);
     }
     return;
   }
@@ -261,10 +260,10 @@ void TM_Default::phi(arr& y, arr& J, const rai::Configuration& C) {
       C.kinematicsQuat(y2, J2, b);
       if(scalarProduct(y, y2)>=0.) {
         y -= y2;
-        if(!!J) J -= J2;
+        J -= J2;
       } else {
         y += y2;
-        if(!!J) J += J2;
+        J += J2;
       }
     }
     return;
@@ -276,7 +275,7 @@ void TM_Default::phi(arr& y, arr& J, const rai::Configuration& C) {
     tmp.type = TMT_pos;
     tmp.phi(y, J, C);
     tmp.type = TMT_quat;
-    tmp.phi(yq, (!!J?Jq:NoArr), C);
+    tmp.phi(yq, Jq, C);
     y.append(yq);
     if(!!J) J.append(Jq);
     return;
@@ -288,7 +287,7 @@ void TM_Default::phi(arr& y, arr& J, const rai::Configuration& C) {
     tmp.type = TMT_posDiff;
     tmp.phi(y, J, C);
     tmp.type = TMT_quatDiff;
-    tmp.phi(yq, (!!J?Jq:NoArr), C);
+    tmp.phi(yq, Jq, C);
     y.append(yq);
     if(!!J) J.append(Jq);
     return;
@@ -314,19 +313,19 @@ uint TM_Default::dim_phi(const rai::Configuration& C) {
   }
 }
 
-void TM_Default::signature(intA& S, const rai::Configuration& C){
-  rai::Frame *a = i<0?nullptr: C.frames(i);
-  rai::Frame *b = j<0?nullptr: C.frames(j);
+void TM_Default::signature(intA& S, const rai::Configuration& C) {
+  rai::Frame* a = i<0?nullptr: C.frames(i);
+  rai::Frame* b = j<0?nullptr: C.frames(j);
 
   S.clear();
   FrameL F;
   if(a) F.append(a->getPathToRoot());
   if(b) F.append(b->getPathToRoot());
 
-  for(rai::Frame *f:F) if(f->joint){
-    rai::Joint *j = f->joint;
-    for(uint i=0;i<j->qDim();i++) S.setAppendInSorted(j->qIndex+i);
-  }
+  for(rai::Frame* f:F) if(f->joint) {
+      rai::Joint* j = f->joint;
+      for(uint i=0; i<j->qDim(); i++) S.setAppendInSorted(j->qIndex+i);
+    }
 }
 
 rai::String TM_Default::shortTag(const rai::Configuration& C) {

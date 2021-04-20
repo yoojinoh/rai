@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -90,7 +90,7 @@ void PlaneConstraint::phi(arr& y, arr& J, const rai::Configuration& G) {
 //===========================================================================
 
 void ConstraintStickiness::phi(arr& y, arr& J, const rai::Configuration& G) {
-  map.__phi(y, J, G);
+  map.eval(y, J, G);
   for(uint j=0; j<y.N; j++) y(j) = -y(j);
   if(!!J) for(uint j=0; j<J.d0; j++) J[j]() *= -1.;
 }

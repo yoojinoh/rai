@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -52,7 +52,7 @@ Simulator::Simulator(const char* orsFile) {
   self = make_unique<sSimulator>();
 
   //RAI
-  self->G.init(orsFile);
+  self->G.readFromGraph(orsFile);
   /*  if(self->G.getBodyByName("rfoot")){
     self->G.reconfigureRoot(self->G.getBodyByName("rfoot"));
     self->G.calcBodyFramesFromJoints();
@@ -409,5 +409,5 @@ void glDrawCarSimulator(void* classP, OpenGL&) {
 #endif
 }
 
-#include "../Core/array.tpp"
+#include "../Core/array.ipp"
 template rai::Array<CarSimulator::Gaussian>& rai::Array<CarSimulator::Gaussian>::resize(uint);

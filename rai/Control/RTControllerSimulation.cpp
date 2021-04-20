@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -175,7 +175,6 @@ void RTControllerSimulation::open() {
   arr q = world->getJointState();
   arr qDot = zeros(q.N);
 
-
   //makeConvexHulls(world->shapes);
 
   I_term = zeros(q.N);
@@ -187,13 +186,13 @@ void RTControllerSimulation::open() {
   rai::Joint* j;
   for(rai::Frame* f: world->frames) if((j=f->joint) && j->qDim()>0) {
       arr* info;
-      info = f->ats.find<arr>("gains");  if(info) {
+      info = f->ats->find<arr>("gains");  if(info) {
         for(uint i=0; i<j->qDim(); i++) { Kp_base(j->qIndex+i)=info->elem(0); Kd_base(j->qIndex+i)=info->elem(1); }
       }
-      info = f->ats.find<arr>("limits");  if(info) {
+      info = f->ats->find<arr>("limits");  if(info) {
         for(uint i=0; i<j->qDim(); i++) { limits(j->qIndex+i, 0)=info->elem(0); limits(j->qIndex+i, 1)=info->elem(1); }
       }
-      info = f->ats.find<arr>("ctrl_limits");  if(info) {
+      info = f->ats->find<arr>("ctrl_limits");  if(info) {
         for(uint i=0; i<j->qDim(); i++) { limits(j->qIndex+i, 2)=info->elem(0); limits(j->qIndex+i, 3)=info->elem(1); limits(j->qIndex+i, 4)=info->elem(2); }
       }
     }
@@ -206,7 +205,7 @@ void RTControllerSimulation::open() {
   this->ctrl_obs().u_bias = zeros(q.d0);
   this->ctrl_obs.deAccess();
 
-  j_baseTranslationRotation = world->getFrameByName("worldTranslationRotation")->joint;
+  j_baseTranslationRotation = world->getFrame("worldTranslationRotation")->joint;
 }
 
 void RTControllerSimulation::step() {

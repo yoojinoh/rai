@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -92,17 +92,17 @@ void BayesOpt::report(bool display, const ScalarFunction& f) {
 #if 1
   HALT("dependence on plot deprecated")
 #else
-  plot->Gnuplot();
-  plot->Clear();
-  plot->FunctionPrecision(X_grid, y_grid, y_grid+s_grid, y_grid-s_grid);
-//  plot->Function(X_grid, y2_grid);
-  plot->Function(X_grid, y_grid-2.*s_grid);
-  plot->Function(X_grid, y2_grid-2.*s2_grid);
-  if(f) plot->Function(X_grid, f_grid);
-  plot->Points(data_X, data_y);
-//  plot->Points(locmin_X, locmin_y);
-//  plot->Points(locmin2_X, locmin2_y);
-  plot->update(false);
+  plot()->Gnuplot();
+  plot()->Clear();
+  plot()->FunctionPrecision(X_grid, y_grid, y_grid+s_grid, y_grid-s_grid);
+//  plot()->Function(X_grid, y2_grid);
+  plot()->Function(X_grid, y_grid-2.*s_grid);
+  plot()->Function(X_grid, y2_grid-2.*s2_grid);
+  if(f) plot()->Function(X_grid, f_grid);
+  plot()->Points(data_X, data_y);
+//  plot()->Points(locmin_X, locmin_y);
+//  plot()->Points(locmin2_X, locmin2_y);
+  plot()->update(false);
 #endif
 }
 

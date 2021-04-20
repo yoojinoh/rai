@@ -1,9 +1,17 @@
+/*  ------------------------------------------------------------------
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
+
+    This code is distributed under the MIT License.
+    Please see <root-path>/LICENSE for details.
+    --------------------------------------------------------------  */
+
 #pragma once
 
-#include <memory>
+#ifdef RAI_PYBIND
 
-struct Feature;
+#include <pybind11/pybind11.h>
 
-namespace ry{
-  struct RyFeature { std::shared_ptr<Feature> feature; };
-}
+void init_Feature(pybind11::module& m);
+
+#endif

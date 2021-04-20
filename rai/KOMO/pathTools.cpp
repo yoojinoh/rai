@@ -1,6 +1,6 @@
 /*  ------------------------------------------------------------------
-    Copyright (c) 2019 Marc Toussaint
-    email: marc.toussaint@informatik.uni-stuttgart.de
+    Copyright (c) 2011-2020 Marc Toussaint
+    email: toussaint@tu-berlin.de
 
     This code is distributed under the MIT License.
     Please see <root-path>/LICENSE for details.
@@ -29,7 +29,7 @@ arr getAccelerations_centralDifference(const arr& q, double tau) {
   return a;
 }
 
-double getNaturalDuration(const arr& q, double maxVel, double maxAcc){
+double getNaturalDuration(const arr& q, double maxVel, double maxAcc) {
   arr v = getVelocities_centralDifference(q, 1.);
   arr a = getVelocities_centralDifference(q, 1.);
 
@@ -107,9 +107,9 @@ rai::String validatePath(const rai::Configuration& _C, const arr& q_now, const S
 //  }
 //}
 
-std::pair<arr, arr> getStartGoalPath(const rai::Configuration& K, const arr& target_q, const StringA& target_joints, const char* endeff, double up, double down) {
+std::pair<arr, arr> getStartGoalPath(const rai::Configuration& C, const arr& target_q, const StringA& target_joints, const char* endeff, double up, double down) {
   KOMO komo;
-  komo.setModel(K, true);
+  komo.setModel(C, true);
   komo.setTiming(1., 20, 3.);
   komo.add_qControlObjective({}, 2, 1.);
 
@@ -130,12 +130,12 @@ std::pair<arr, arr> getStartGoalPath(const rai::Configuration& K, const arr& tar
   komo.verbose=1;
   komo.optimize();
 
-  arr path = komo.getPath(K.getJointNames());
+  arr path = komo.getPath_qOrg();
   path[path.d0-1] = target_q; //overwrite last config
   arr times = komo.getPath_times();
-  cout <<validatePath(K, K.getJointState(), target_joints, path, times) <<endl;
-  bool go = komo.displayPath(true, true);//;/komo.display();
-  if(!go) {
+  cout <<validatePath(C, C.getJointState(), target_joints, path, times) <<endl;
+  int key = komo.view(true);
+  if(key=='q') {
     cout <<"ABORT!" <<endl;
     return {arr(), arr()};
   }
@@ -159,24 +159,22 @@ void mirrorDuplicate(std::pair<arr, arr>& path) {
   }
 }
 
-arr path_resample(const arr& q, double durationScale){
+arr path_resample(const arr& q, double durationScale) {
   rai::Spline S = getSpline(q);
 
   uint T = durationScale * q.d0;
   durationScale = double(T)/double(q.d0);
 
   arr r(T, q.d1);
-  for(uint t=0;t<T;t++){
+  for(uint t=0; t<T; t++) {
     r[t] = S.eval(double(t)/double(T-1));
   }
 
   return r;
 }
 
-rai::Spline getSpline(const arr& q, double duration, uint degree){
-  rai::Spline S = rai::Spline(0, q, degree);
-  if(duration!=1.){
-    S.times *= duration;
-  }
+rai::Spline getSpline(const arr& q, double duration, uint degree) {
+  rai::Spline S;
+  S.set(degree, q, grid(1,0.,duration, q.N-1));
   return S;
 }

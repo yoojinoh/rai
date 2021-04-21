@@ -39,6 +39,13 @@ void init_Simulation(pybind11::module& m) {
        pybind11::arg("u_mode") = rai::Simulation::_velocity
       )
 
+  .def("setMoveTo", &rai::Simulation::setMoveTo,
+       "this appends a new target configuration to the spline execution",
+       pybind11::arg("target configuration (joint angles)"),
+       pybind11::arg("duration to target (which is appended to the spline)"),
+       pybind11::arg("if append=false, the current spline execution is abandoned and smoothly redirected to the new target")
+      )
+
   .def("get_q", &rai::Simulation::get_q)
 
   .def("get_qDot", &rai::Simulation::get_qDot)

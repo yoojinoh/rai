@@ -118,7 +118,6 @@ Simulation::Simulation(Configuration& _C, Simulation::SimulatorEngine _engine, i
   } else if(engine==_kinematic) {
     //nothing
   } else NIY;
-  self->ref.initialize(C.getJointState(), NoArr, time);
   if(verbose>0) self->display = make_shared<Simulation_DisplayThread>(C);
 }
 
@@ -149,9 +148,12 @@ void Simulation::step(const arr& u_control, double tau, ControlMode u_mode) {
     C.setJointState(q);
   } else if(u_mode==_spline) {
     arr q = C.getJointState();
+    if(!self->ref.isInitialized()) self->ref.initialize(q, NoArr, time);
     self->ref.getReference(q, NoArr, NoArr, q, NoArr, time);
     C.setJointState(q);
   } else NIY;
+
+  if(u_mode!=_spline) self->ref.deinitialize();
 
   //-- imps before physics
   for(ptr<SimulationImp>& imp : imps) if(imp->when==SimulationImp::_beforePhysics) {
@@ -178,10 +180,22 @@ void Simulation::step(const arr& u_control, double tau, ControlMode u_mode) {
   if(verbose>0) self->updateDisplayData(time, C);
 }
 
-void Simulation::setMoveTo(const arr& x, double t, bool append){
+void Simulation::setMoveTo(const arr& x, double duration, bool append){
+  //is spline was not used yet, initialize it
+  if(!self->ref.isInitialized()) self->ref.initialize(C.getJointState(), NoArr, time);
 
-  if(append) self->ref.append(~x, {t}, time, true);
-  else self->ref.overrideSmooth(~x, {t}, time);
+  arr times;
+  if(x.nd==2 && x.d0>1){
+    times = range(0., duration, x.d0-1);
+    times += times(1);
+  }else{
+    times = {duration};
+  }
+  arr path = x.ref();
+  if(path.nd==1) path.reshape(1,-1);
+
+  if(append) self->ref.append(path, times, time, true);
+  else self->ref.overrideSmooth(path, times, time);
 }
 
 bool getFingersForGripper(rai::Frame*& gripper, rai::Frame*& fing1, rai::Frame*& fing2, rai::Configuration& C, const char* gripperFrameName) {

@@ -39,7 +39,7 @@ struct Simulation {
   void step(const arr& u_control={}, double tau=.01, ControlMode u_mode = _spline);
 
   //-- adapt the spline reference to genreate motion (should become the default way)
-  void setMoveTo(const arr& q, double t, bool append=true);
+  void setMoveTo(const arr& q, double duration, bool append=true);
 
   //-- send a gripper command
   void openGripper(const char* gripperFrameName, double width=.075, double speed=.3);

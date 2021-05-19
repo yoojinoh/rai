@@ -3,7 +3,11 @@
 namespace rai{
 
 void SplineCtrlReference::initialize(const arr& q_real, const arr& qDot_real, double ctrlTime) {
-  spline.set()->set(2, ~q_real, {ctrlTime});
+    spline.set()->set(2, ~q_real, {ctrlTime});
+}
+
+bool SplineCtrlReference::isInitialized(){
+  return spline.get()->times.N>0;
 }
 
 void SplineCtrlReference::getReference(arr& q_ref, arr& qDot_ref, arr& qDDot_ref, const arr& q_real, const arr& qDot_real, double ctrlTime){
@@ -12,7 +16,11 @@ void SplineCtrlReference::getReference(arr& q_ref, arr& qDot_ref, arr& qDDot_ref
 }
 
 void SplineCtrlReference::waitForInitialized(){
-  while(!spline.get()->times.N) spline.waitForNextRevision();
+  while(!isInitialized()) spline.waitForNextRevision();
+}
+
+void SplineCtrlReference::deinitialize(){
+  spline.set()->clear();
 }
 
 void SplineCtrlReference::append(const arr& x, const arr& t, double ctrlTime, bool prependLast){

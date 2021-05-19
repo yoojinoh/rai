@@ -16,7 +16,9 @@ struct SplineCtrlReference : ReferenceFeed {
 
   /// initializes to constant (q_real, zero-vel) spline
   void initialize(const arr& q_real, const arr& qDot_real, double time);
+  bool isInitialized();
   void waitForInitialized();
+  void deinitialize();
 
   /// callback called by a robot control loop; at first time initializes the spline
   void getReference(arr& q_ref, arr& qDot_ref, arr& qDDot_ref, const arr& q_real, const arr& qDot_real, double ctrlTime);

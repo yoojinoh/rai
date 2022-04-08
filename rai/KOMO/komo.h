@@ -35,7 +35,7 @@ enum KOMOsolver { KS_none=-1, KS_dense=0, KS_sparse, KS_banded, KS_sparseFactore
 
 namespace rai {
   struct KOMO_Options {
-    RAI_PARAM("KOMO/", int, verbose, 1)
+    RAI_PARAM("KOMO/", int, verbose, 0)
     RAI_PARAM("KOMO/", int, animateOptimization, 0)
     RAI_PARAM("KOMO/", bool, mimicStable, false)
   };

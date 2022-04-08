@@ -163,7 +163,8 @@ struct OpenGL {
   OpenGLDrawOptions drawOptions;
 
   /// @name constructors & destructors
-  OpenGL(const char* title="rai::OpenGL", int w=400, int h=400, bool _offscreen=false);
+  // yoojin: window size
+  OpenGL(const char* title="rai::OpenGL", int w=600, int h=600, bool _offscreen=false);
   //OpenGL(void *parent, const char* title="rai::OpenGL", int w=400, int h=400, int posx=-1, int posy=-1);
   OpenGL(void* container); //special constructor: used when the underlying system-dependent class exists already
 

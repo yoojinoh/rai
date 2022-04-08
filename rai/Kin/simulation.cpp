@@ -304,7 +304,14 @@ void Simulation::closeGripper(const char* gripperFrameName, double width, double
       if(d2<d) { obj = objs(i); d = d2; }
     }
   }
-
+  //yoojin: prevent Segmentation fault when trying to grab "world", "table", "shelf"
+  if (obj->name=="table" || obj->name=="world" ||
+      obj->name=="shelf" || obj->name=="shape" ||
+      obj->name=="shelf_vL" || obj->name=="shelf_vR" ||
+      obj->name=="shelf_h0" || obj->name=="shelf_h1" ||
+      obj->name=="shelf_h2" || obj->name=="shelf_h3" ) {
+    obj=0;
+  }
   if(verbose>1) {
     if(obj) {
       LOG(1) <<"initiating grasp of object " <<obj->name <<" (if this is not what you expect, did you setContact(1) for the object you want to grasp?)";

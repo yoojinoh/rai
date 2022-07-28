@@ -294,6 +294,7 @@ void Simulation::closeGripper(const char* gripperFrameName, double width, double
 
   rai::Frame* obj = 0;
   if(objs.N) obj = objs.elem(0);
+  else return;
 
   //choose from multiple object candidates
   if(objs.N>1) {

@@ -57,6 +57,12 @@ void init_Simulation(pybind11::module& m) {
        pybind11::arg("speed") = .3,
        pybind11::arg("force") = 20.
       )
+    
+  // yoojin
+  .def("getGripperIsClose", &rai::Simulation::getGripperIsClose,
+       "",
+       pybind11::arg("gripperFrameName")
+      )
 
   .def("getGripperWidth", &rai::Simulation::getGripperWidth,
        "",

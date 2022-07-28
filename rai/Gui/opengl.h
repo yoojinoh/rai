@@ -170,6 +170,7 @@ struct OpenGL {
 
   /// @name constructors & destructors
   OpenGL(const char* title="rai::OpenGL", int w=400, int h=400, bool _offscreen=false, bool _fullscreen=false, bool _hideCameraControls=false, bool _noCursor=false);
+
   //OpenGL(void *parent, const char* title="rai::OpenGL", int w=400, int h=400, int posx=-1, int posy=-1);
   OpenGL(void* container); //special constructor: used when the underlying system-dependent class exists already
 

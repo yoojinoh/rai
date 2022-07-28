@@ -51,9 +51,10 @@ pybind11::dict graph2dict(const rai::Graph& G) {
       dict[key.p] = n->get<bool>();
     } else if(n->isOfType<rai::Enum<rai::ShapeType>>()) {
       dict[key.p] = n->get<rai::Enum<rai::ShapeType>>().name();
-    } else {
-      LOG(-1) <<"can't convert node of type " <<n->type.name() <<" to dictionary";
-    }
+    } 
+    // else {
+    //   LOG(-1) <<"can't convert node of type " <<n->type.name() <<" to dictionary";
+    // }
   }
   return dict;
 }
